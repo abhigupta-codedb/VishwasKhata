@@ -1,0 +1,6 @@
+{
+  "name": "Partner Ledger",
+  "description": "Mobile-first shared source of truth for business partners to track capital, expenses, loans, decisions, approvals, and audit trails.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
