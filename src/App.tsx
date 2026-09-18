@@ -189,7 +189,7 @@ export default function App() {
 
   // Financial calculations
   const financials = useMemo(() => {
-    return calculateProjectFinancials(currentProject, entries);
+    return currentProject ? calculateProjectFinancials(currentProject, entries) : null;
   }, [currentProject, entries]);
 
   // Pending approvals for active partner
@@ -614,6 +614,31 @@ export default function App() {
   // If user is not signed in and not in demo mode, display Login & Demo Screen
   if (!authUser && !isDemoMode) {
     return <AuthScreen onEnterDemo={() => setIsDemoMode(true)} />;
+  }
+
+  if (!currentProject || !financials) {
+    return (
+      <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl bg-stone-50 p-6 text-center shadow-sm border border-stone-200">
+          <h1 className="text-lg font-bold text-stone-900">Create your first project</h1>
+          <p className="mt-2 text-sm text-stone-500">Start a shared ledger to track partner money and approvals.</p>
+          <button
+            type="button"
+            onClick={() => setIsNewProjectModalOpen(true)}
+            className="mt-5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+          >
+            Create project
+          </button>
+        </div>
+        {isNewProjectModalOpen && (
+          <NewProjectModal
+            activePartner={activePartner}
+            onClose={() => setIsNewProjectModalOpen(false)}
+            onCreateProject={handleCreateProject}
+          />
+        )}
+      </div>
+    );
   }
 
   return (

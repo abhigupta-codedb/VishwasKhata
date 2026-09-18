@@ -106,7 +106,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onEnterDemo }) => {
           <div className="flex items-center gap-2 p-2.5 bg-emerald-50/70 border border-emerald-200/60 rounded-xl text-emerald-900 text-xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <span className="text-[11px] leading-tight">
-              Real-time Firestore cloud synchronization for all partners & ventures.
+              Real-time cloud synchronization for all partners & ventures.
             </span>
           </div>
 
@@ -164,14 +164,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onEnterDemo }) => {
               className="w-full py-2.5 px-4 bg-stone-100 hover:bg-stone-200/80 active:scale-98 text-stone-800 border border-stone-200 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>Explore Interactive Demo (Deccan Tech LLP)</span>
+              <span>Demo try Karein!</span>
               <ArrowRight className="w-3.5 h-3.5 text-stone-400" />
             </button>
           </div>
 
-          <div className="pt-2 text-center text-[10px] text-stone-400">
-            Secure cloud storage hosted on Google Cloud Firestore • Passkeys & OAuth 2.0
-          </div>
         </div>
 
       </div>

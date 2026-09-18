@@ -411,7 +411,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
               className="w-full flex items-center justify-center gap-1.5 py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-semibold text-rose-700 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset to Clean Indian LLP Scenario</span>
+              <span>Reset to clean up</span>
             </button>
           </div>
         </div>
