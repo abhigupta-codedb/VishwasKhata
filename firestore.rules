@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // User profile documents
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Projects: accessible if user is signed in
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+
+      // Sub-collections or associated data if stored as subcollections
+      match /{document=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Top-level ledger entries
+    match /entries/{entryId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Audit logs
+    match /auditLogs/{logId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

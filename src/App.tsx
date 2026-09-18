@@ -7,7 +7,8 @@ import {
   NavigationTab, 
   VoteDecision, 
   ApprovalStatus,
-  EntryType
+  EntryType,
+  UserProfile
 } from './types';
 import {
   loadStoredProjects,
@@ -24,6 +25,21 @@ import {
   resetToDemoData
 } from './utils/storage';
 
+import { auth } from './firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import {
+  seedInitialFirestoreDataIfEmpty,
+  saveUserProfile,
+  subscribeToProjects,
+  subscribeToEntries,
+  subscribeToAuditLogs,
+  saveProjectToFirestore,
+  saveEntryToFirestore,
+  saveAuditLogToFirestore,
+  resetFirestoreToDemoData
+} from './services/firestoreService';
+
+import { AuthScreen } from './components/AuthScreen';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { TimelineView } from './components/TimelineView';
@@ -35,37 +51,21 @@ import { MoreView } from './components/MoreView';
 import { NewProjectModal } from './components/NewProjectModal';
 
 export default function App() {
-  // Primary State
+  // Authentication & Demo state
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+
+  // Primary Data State
   const [projects, setProjects] = useState<Project[]>(() => loadStoredProjects());
   const [entries, setEntries] = useState<LedgerEntry[]>(() => loadStoredEntries());
   const [auditLog, setAuditLog] = useState<AuditLogItem[]>(() => loadStoredAuditLog());
 
   const [activeProjectId, setActiveProjectId] = useState<string>(() => loadActiveProjectId(projects));
-  
-  // Current active project
-  const currentProject = useMemo(() => {
-    return projects.find(p => p.id === activeProjectId) || projects[0];
-  }, [projects, activeProjectId]);
+  const [activePartnerId, setActivePartnerId] = useState<string>('');
 
-  // Active partner persona for testing and multi-partner voting
-  const [activePartnerId, setActivePartnerId] = useState<string>(() => {
-    return loadActivePartnerId(currentProject?.partners || []);
-  });
-
-  const activePartner = useMemo(() => {
-    if (!currentProject) return {
-      id: 'partner_default',
-      name: 'Default Partner',
-      email: 'partner@example.com',
-      role: 'Partner',
-      equityPercentage: 50,
-      avatarColor: '#059669',
-      status: 'active' as const,
-    };
-    return currentProject.partners.find(p => p.id === activePartnerId) || currentProject.partners[0];
-  }, [currentProject, activePartnerId]);
-
-  // Navigation & Modals
+  // Modals & Navigation
   const [currentTab, setCurrentTab] = useState<NavigationTab>('timeline');
   const [selectedEntry, setSelectedEntry] = useState<LedgerEntry | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -79,44 +79,107 @@ export default function App() {
   } | undefined>(undefined);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
 
-  // Sync to storage
+  // Track Firebase Auth state
   useEffect(() => {
-    saveStoredProjects(projects);
-  }, [projects]);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setAuthUser(user);
+      if (user) {
+        const profile: UserProfile = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          lastLoginAt: new Date().toISOString(),
+        };
+        setCurrentUserProfile(profile);
 
+        // Save profile and seed initial cloud data if newly created
+        if (!user.isAnonymous) {
+          await saveUserProfile(profile);
+        }
+        await seedInitialFirestoreDataIfEmpty(user.uid, user.email || undefined, user.displayName || undefined);
+      } else {
+        setCurrentUserProfile(null);
+      }
+      setAuthInitialized(true);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time synchronization with Firestore when signed in (Google or Anonymous Demo)
   useEffect(() => {
-    saveStoredEntries(entries);
-  }, [entries]);
+    if (!authUser) return;
 
+    const unsubProjects = subscribeToProjects((remoteProjects) => {
+      if (remoteProjects && remoteProjects.length > 0) {
+        setProjects(remoteProjects);
+        saveStoredProjects(remoteProjects);
+      }
+    });
+
+    const unsubEntries = subscribeToEntries((remoteEntries) => {
+      if (remoteEntries) {
+        setEntries(remoteEntries);
+        saveStoredEntries(remoteEntries);
+      }
+    });
+
+    const unsubAudit = subscribeToAuditLogs((remoteLogs) => {
+      if (remoteLogs) {
+        setAuditLog(remoteLogs);
+        saveStoredAuditLog(remoteLogs);
+      }
+    });
+
+    return () => {
+      unsubProjects();
+      unsubEntries();
+      unsubAudit();
+    };
+  }, [authUser]);
+
+  // Current active project
+  const currentProject = useMemo(() => {
+    return projects.find(p => p.id === activeProjectId) || projects[0];
+  }, [projects, activeProjectId]);
+
+  // Keep activeProjectId valid
   useEffect(() => {
-    saveStoredAuditLog(auditLog);
-  }, [auditLog]);
+    if (projects.length > 0 && !projects.some(p => p.id === activeProjectId)) {
+      setActiveProjectId(projects[0].id);
+    }
+  }, [projects, activeProjectId]);
 
+  // Initialize and validate activePartnerId
   useEffect(() => {
-    if (activeProjectId) saveActiveProjectId(activeProjectId);
-  }, [activeProjectId]);
+    if (currentProject?.partners && currentProject.partners.length > 0) {
+      if (!activePartnerId || !currentProject.partners.some(p => p.id === activePartnerId)) {
+        // If current user's email matches a partner, auto-select that partner
+        const matched = currentUserProfile?.email 
+          ? currentProject.partners.find(p => p.email.toLowerCase() === currentUserProfile.email?.toLowerCase())
+          : null;
+        setActivePartnerId(matched ? matched.id : currentProject.partners[0].id);
+      }
+    }
+  }, [currentProject, activePartnerId, currentUserProfile]);
 
-  useEffect(() => {
-    if (activePartnerId) saveActivePartnerId(activePartnerId);
-  }, [activePartnerId]);
+  const activePartner = useMemo(() => {
+    if (!currentProject || !currentProject.partners || currentProject.partners.length === 0) {
+      return {
+        id: 'partner_default',
+        name: currentUserProfile?.displayName || 'Managing Partner',
+        email: currentUserProfile?.email || 'partner@deccanstudio.in',
+        role: 'Partner',
+        equityPercentage: 50,
+        avatarColor: '#059669',
+        status: 'active' as const,
+      };
+    }
+    return currentProject.partners.find(p => p.id === activePartnerId) || currentProject.partners[0];
+  }, [currentProject, activePartnerId, currentUserProfile]);
 
-  // Financial calculations
-  const financials = useMemo(() => {
-    return calculateProjectFinancials(currentProject, entries);
-  }, [currentProject, entries]);
-
-  // Count pending approvals specifically awaiting this active partner's review
-  const pendingApprovalsForActivePartner = useMemo(() => {
-    return entries.filter(e => {
-      if (e.projectId !== currentProject.id || e.status !== 'pending') return false;
-      const isApprover = e.requiredApproverPartnerIds.includes(activePartner.id);
-      if (!isApprover) return false;
-      const myVote = e.votes.find(v => v.partnerId === activePartner.id);
-      return !myVote || myVote.decision === 'pending';
-    }).length;
-  }, [entries, currentProject.id, activePartner.id]);
-
-  // Keep selectedEntry state in sync when entries change
+  // Keep selectedEntry in sync when entries list is updated from Firestore
   useEffect(() => {
     if (selectedEntry) {
       const updated = entries.find(e => e.id === selectedEntry.id);
@@ -124,10 +187,28 @@ export default function App() {
     }
   }, [entries]);
 
+  // Financial calculations
+  const financials = useMemo(() => {
+    return calculateProjectFinancials(currentProject, entries);
+  }, [currentProject, entries]);
+
+  // Pending approvals for active partner
+  const pendingApprovalsForActivePartner = useMemo(() => {
+    if (!currentProject) return 0;
+    return entries.filter(e => {
+      if (e.projectId !== currentProject.id || e.status !== 'pending') return false;
+      const isApprover = e.requiredApproverPartnerIds.includes(activePartner.id);
+      if (!isApprover) return false;
+      const myVote = e.votes.find(v => v.partnerId === activePartner.id);
+      return !myVote || myVote.decision === 'pending';
+    }).length;
+  }, [entries, currentProject, activePartner.id]);
+
   // ---------------- Handlers ---------------- //
 
   const handleSelectProject = (projectId: string) => {
     setActiveProjectId(projectId);
+    saveActiveProjectId(projectId);
     const targetProject = projects.find(p => p.id === projectId);
     if (targetProject && targetProject.partners.length > 0) {
       setActivePartnerId(targetProject.partners[0].id);
@@ -136,9 +217,10 @@ export default function App() {
 
   const handleSelectPartner = (partnerId: string) => {
     setActivePartnerId(partnerId);
+    saveActivePartnerId(partnerId);
   };
 
-  const handleCreateEntry = (
+  const handleCreateEntry = async (
     newEntryData: Omit<LedgerEntry, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'amendments' | 'votes' | 'comments' | 'status'>
   ) => {
     const entryId = `entry_${Date.now()}`;
@@ -164,6 +246,7 @@ export default function App() {
       updatedAt: now,
     };
 
+    // Optimistic local state update
     setEntries(prev => [newEntry, ...prev]);
 
     // Record audit log
@@ -179,15 +262,22 @@ export default function App() {
       details: newEntry.amount ? `Amount: ${currentProject.currency}${newEntry.amount}` : undefined,
     };
     setAuditLog(prev => [auditItem, ...prev]);
+
+    // Save to Firestore
+    if (authUser) {
+      await saveEntryToFirestore(newEntry);
+      await saveAuditLogToFirestore(auditItem);
+    }
   };
 
-  const handleCastVote = (entryId: string, decision: VoteDecision, note?: string) => {
+  const handleCastVote = async (entryId: string, decision: VoteDecision, note?: string) => {
     const now = new Date().toISOString();
+
+    let updatedEntryToSave: LedgerEntry | null = null;
 
     setEntries(prev => prev.map(entry => {
       if (entry.id !== entryId) return entry;
 
-      // Update active partner vote
       const updatedVotes = entry.votes.map(v => {
         if (v.partnerId === activePartner.id) {
           return {
@@ -200,7 +290,6 @@ export default function App() {
         return v;
       });
 
-      // If active partner wasn't in votes list yet, add them
       if (!updatedVotes.some(v => v.partnerId === activePartner.id)) {
         updatedVotes.push({
           partnerId: activePartner.id,
@@ -210,7 +299,6 @@ export default function App() {
         });
       }
 
-      // Calculate new overall status
       let newStatus: ApprovalStatus = entry.status;
       const hasRejection = updatedVotes.some(v => v.decision === 'rejected');
       const allApproved = entry.requiredApproverPartnerIds.every(pid => {
@@ -226,15 +314,16 @@ export default function App() {
         newStatus = 'pending';
       }
 
-      return {
+      const res = {
         ...entry,
         votes: updatedVotes,
         status: newStatus,
         updatedAt: now,
       };
+      updatedEntryToSave = res;
+      return res;
     }));
 
-    // Record audit log
     const targetEntry = entries.find(e => e.id === entryId);
     const auditItem: AuditLogItem = {
       id: `audit_${Date.now()}`,
@@ -248,9 +337,14 @@ export default function App() {
       details: note ? `Partner Note: ${note}` : undefined,
     };
     setAuditLog(prev => [auditItem, ...prev]);
+
+    if (authUser && updatedEntryToSave) {
+      await saveEntryToFirestore(updatedEntryToSave);
+      await saveAuditLogToFirestore(auditItem);
+    }
   };
 
-  const handleAmendEntry = (
+  const handleAmendEntry = async (
     entryId: string,
     reason: string,
     updates: {
@@ -262,6 +356,7 @@ export default function App() {
     requireReapproval: boolean
   ) => {
     const now = new Date().toISOString();
+    let updatedEntryToSave: LedgerEntry | null = null;
 
     setEntries(prev => prev.map(entry => {
       if (entry.id !== entryId) return entry;
@@ -282,7 +377,6 @@ export default function App() {
         previousValues,
       };
 
-      // Reset votes if partner re-approval is required
       const newVotes = requireReapproval
         ? entry.requiredApproverPartnerIds.map(pid => ({
             partnerId: pid,
@@ -291,18 +385,19 @@ export default function App() {
           }))
         : entry.votes;
 
-      return {
+      const res = {
         ...entry,
         ...updates,
         version: entry.version + 1,
         amendments: [...entry.amendments, newAmendment],
-        status: requireReapproval ? 'pending' : entry.status,
+        status: requireReapproval ? ('pending' as ApprovalStatus) : entry.status,
         votes: newVotes,
         updatedAt: now,
       };
+      updatedEntryToSave = res;
+      return res;
     }));
 
-    // Audit log
     const targetEntry = entries.find(e => e.id === entryId);
     const auditItem: AuditLogItem = {
       id: `audit_${Date.now()}`,
@@ -313,18 +408,24 @@ export default function App() {
       performedByPartnerId: activePartner.id,
       timestamp: now,
       summary: `${activePartner.name} amended "${targetEntry?.title || 'Entry'}" (Version ${(targetEntry?.version || 1) + 1}).`,
-      details: `Amendment Reason: ${reason}. Changed: ${Object.keys(updates).join(', ')}`,
+      details: `Reason: ${reason}. Changes: ${Object.keys(updates).join(', ')}`,
     };
     setAuditLog(prev => [auditItem, ...prev]);
+
+    if (authUser && updatedEntryToSave) {
+      await saveEntryToFirestore(updatedEntryToSave);
+      await saveAuditLogToFirestore(auditItem);
+    }
   };
 
-  const handleAddComment = (entryId: string, text: string) => {
+  const handleAddComment = async (entryId: string, text: string) => {
     const now = new Date().toISOString();
     const commentId = `comm_${Date.now()}`;
+    let updatedEntryToSave: LedgerEntry | null = null;
 
     setEntries(prev => prev.map(entry => {
       if (entry.id !== entryId) return entry;
-      return {
+      const res = {
         ...entry,
         comments: [
           ...entry.comments,
@@ -337,6 +438,8 @@ export default function App() {
         ],
         updatedAt: now,
       };
+      updatedEntryToSave = res;
+      return res;
     }));
 
     const targetEntry = entries.find(e => e.id === entryId);
@@ -352,18 +455,24 @@ export default function App() {
       details: text,
     };
     setAuditLog(prev => [auditItem, ...prev]);
+
+    if (authUser && updatedEntryToSave) {
+      await saveEntryToFirestore(updatedEntryToSave);
+      await saveAuditLogToFirestore(auditItem);
+    }
   };
 
-  const handleAddAttachment = (
+  const handleAddAttachment = async (
     entryId: string,
     file: { name: string; fileType: string; url: string; sizeKb: number }
   ) => {
     const now = new Date().toISOString();
     const attId = `att_${Date.now()}`;
+    let updatedEntryToSave: LedgerEntry | null = null;
 
     setEntries(prev => prev.map(entry => {
       if (entry.id !== entryId) return entry;
-      return {
+      const res = {
         ...entry,
         attachments: [
           ...entry.attachments,
@@ -378,7 +487,13 @@ export default function App() {
         ],
         updatedAt: now,
       };
+      updatedEntryToSave = res;
+      return res;
     }));
+
+    if (authUser && updatedEntryToSave) {
+      await saveEntryToFirestore(updatedEntryToSave);
+    }
   };
 
   const handleOpenReimburseModal = (partnerId: string, amount: number) => {
@@ -393,7 +508,7 @@ export default function App() {
     setIsAddModalOpen(true);
   };
 
-  const handleInvitePartner = (newPartnerData: {
+  const handleInvitePartner = async (newPartnerData: {
     name: string;
     email: string;
     role: string;
@@ -410,13 +525,12 @@ export default function App() {
       status: 'active',
     };
 
-    setProjects(prev => prev.map(p => {
-      if (p.id !== currentProject.id) return p;
-      return {
-        ...p,
-        partners: [...p.partners, newPartner],
-      };
-    }));
+    const updatedProject = {
+      ...currentProject,
+      partners: [...currentProject.partners, newPartner],
+    };
+
+    setProjects(prev => prev.map(p => p.id === currentProject.id ? updatedProject : p));
 
     const auditItem: AuditLogItem = {
       id: `audit_${Date.now()}`,
@@ -427,27 +541,45 @@ export default function App() {
       summary: `${activePartner.name} added ${newPartner.name} as ${newPartner.role} (${newPartner.equityPercentage}% equity).`,
     };
     setAuditLog(prev => [auditItem, ...prev]);
+
+    if (authUser) {
+      await saveProjectToFirestore(updatedProject);
+      await saveAuditLogToFirestore(auditItem);
+    }
   };
 
-  const handleCreateProject = (newProject: Project) => {
+  const handleCreateProject = async (newProject: Project) => {
     setProjects(prev => [newProject, ...prev]);
     setActiveProjectId(newProject.id);
     setActivePartnerId(newProject.partners[0].id);
     setCurrentTab('timeline');
+
+    if (authUser) {
+      await saveProjectToFirestore(newProject);
+    }
   };
 
-  const handleUpdateProjectSettings = (newCurrency: string, newThreshold: number) => {
-    setProjects(prev => prev.map(p => {
-      if (p.id !== currentProject.id) return p;
-      return {
-        ...p,
-        currency: newCurrency,
-        defaultApprovalThreshold: newThreshold,
-      };
-    }));
+  const handleUpdateProjectSettings = async (newCurrency: string, newThreshold: number) => {
+    const updatedProject = {
+      ...currentProject,
+      currency: newCurrency,
+      defaultApprovalThreshold: newThreshold,
+    };
+    setProjects(prev => prev.map(p => p.id === currentProject.id ? updatedProject : p));
+
+    if (authUser) {
+      await saveProjectToFirestore(updatedProject);
+    }
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
+    if (authUser) {
+      try {
+        await resetFirestoreToDemoData(currentUserProfile?.email || undefined, currentUserProfile?.displayName || undefined);
+      } catch (e) {
+        console.error('Firestore reset error:', e);
+      }
+    }
     const reset = resetToDemoData();
     setProjects(reset.projects);
     setEntries(reset.entries);
@@ -457,6 +589,32 @@ export default function App() {
     setSelectedEntry(null);
     setCurrentTab('timeline');
   };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+    setIsDemoMode(false);
+  };
+
+  // If auth is still checking initial state
+  if (!authInitialized) {
+    return (
+      <div className="min-h-screen bg-stone-100 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-semibold text-stone-600">Connecting to Sajha Khata...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not signed in and not in demo mode, display Login & Demo Screen
+  if (!authUser && !isDemoMode) {
+    return <AuthScreen onEnterDemo={() => setIsDemoMode(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
@@ -519,12 +677,14 @@ export default function App() {
               projects={projects}
               activePartner={activePartner}
               auditLog={auditLog}
+              currentUser={currentUserProfile}
               onSelectPartner={handleSelectPartner}
               onSelectProject={handleSelectProject}
               onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
               onInvitePartner={handleInvitePartner}
               onResetData={handleResetData}
               onUpdateProjectSettings={handleUpdateProjectSettings}
+              onSignOut={handleSignOut}
             />
           )}
         </main>

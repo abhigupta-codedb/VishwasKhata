@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Project, Partner, AuditLogItem } from '../types';
+import { Project, Partner, AuditLogItem, UserProfile } from '../types';
 import { formatDate, formatRelativeTime } from '../utils/storage';
 import { 
   Users, 
@@ -12,7 +12,8 @@ import {
   Share2, 
   Check, 
   Copy, 
-  Sliders
+  Sliders,
+  LogOut
 } from 'lucide-react';
 
 interface MoreViewProps {
@@ -20,12 +21,14 @@ interface MoreViewProps {
   projects: Project[];
   activePartner: Partner;
   auditLog: AuditLogItem[];
+  currentUser: UserProfile | null;
   onSelectPartner: (partnerId: string) => void;
   onSelectProject: (projectId: string) => void;
   onOpenNewProjectModal: () => void;
   onInvitePartner: (newPartner: { name: string; email: string; role: string; equityPercentage: number }) => void;
   onResetData: () => void;
   onUpdateProjectSettings: (currency: string, defaultApprovalThreshold: number) => void;
+  onSignOut: () => void;
 }
 
 export const MoreView: React.FC<MoreViewProps> = ({
@@ -33,12 +36,14 @@ export const MoreView: React.FC<MoreViewProps> = ({
   projects,
   activePartner,
   auditLog,
+  currentUser,
   onSelectPartner,
   onSelectProject,
   onOpenNewProjectModal,
   onInvitePartner,
   onResetData,
   onUpdateProjectSettings,
+  onSignOut,
 }) => {
   const [activeSection, setActiveSection] = useState<'partners' | 'audit' | 'projects' | 'settings'>('partners');
 
@@ -370,6 +375,24 @@ export const MoreView: React.FC<MoreViewProps> = ({
           </div>
 
           <div className="pt-3 border-t border-stone-100 space-y-2">
+            {/* Logged in User Account Status */}
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-stone-500">Connected Account:</span>
+                <span className="font-semibold text-stone-800 truncate max-w-[180px]">
+                  {currentUser?.email || (currentUser?.displayName ? currentUser.displayName : 'Live Demo Sandbox')}
+                </span>
+              </div>
+              <button
+                id="signout-btn"
+                onClick={onSignOut}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-white border border-stone-300 hover:bg-stone-100 rounded-lg text-xs font-semibold text-stone-800 transition-colors shadow-2xs"
+              >
+                <LogOut className="w-3.5 h-3.5 text-stone-500" />
+                <span>{currentUser ? 'Sign Out of Google' : 'Exit Demo & Go to Login'}</span>
+              </button>
+            </div>
+
             <button
               onClick={handleExportJSON}
               className="w-full flex items-center justify-center gap-1.5 py-2 bg-stone-50 border border-stone-200 hover:bg-stone-100 rounded-xl text-xs font-semibold text-stone-700 transition-colors"
@@ -381,7 +404,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
             <button
               id="reset-demo-data-btn"
               onClick={() => {
-                if (confirm('Reset project data back to clean Indian LLP scenario?')) {
+                if (confirm('Reset project data back to clean Indian LLP scenario in Firestore?')) {
                   onResetData();
                 }
               }}
