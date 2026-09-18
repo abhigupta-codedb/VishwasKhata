@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profiles authenticated via Google or demo session",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "lastLoginAt": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "projects": {
+      "title": "Projects",
+      "description": "Shared business venture or partnership ledger",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "currency": { "type": "string" },
+        "defaultApprovalThreshold": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "partners": { "type": "array" }
+      },
+      "required": ["id", "name", "currency", "partners"]
+    },
+    "entries": {
+      "title": "Ledger Entries",
+      "description": "Financial capital contributions, expenses, loans, and reimbursements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "votes": { "type": "array" }
+      },
+      "required": ["id", "projectId", "type", "title", "status"]
+    },
+    "auditLogs": {
+      "title": "Audit Logs",
+      "description": "Immutable audit trail of actions taken on projects and entries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "action": { "type": "string" },
+        "performedByPartnerId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "summary": { "type": "string" }
+      },
+      "required": ["id", "projectId", "action", "timestamp", "summary"]
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
