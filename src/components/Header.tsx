@@ -9,7 +9,8 @@ import {
   Plus, 
   Sparkles,
   ShieldCheck,
-  Lock
+  Lock,
+  LogOut
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -22,6 +23,7 @@ interface HeaderProps {
   pendingApprovalsForActivePartner: number;
   onOpenNewProjectModal: () => void;
   onNavigateToApprovals: () => void;
+  onSignOut: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,9 +36,11 @@ export const Header: React.FC<HeaderProps> = ({
   pendingApprovalsForActivePartner,
   onOpenNewProjectModal,
   onNavigateToApprovals,
+  onSignOut,
 }) => {
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [showPartnerMenu, setShowPartnerMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200/90 transition-colors">
@@ -49,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => {
               setShowProjectMenu(!showProjectMenu);
               setShowPartnerMenu(false);
+              setShowUserMenu(false);
             }}
             className="flex items-center gap-2 text-left hover:bg-stone-100/70 p-1.5 rounded-xl transition-colors"
           >
@@ -202,22 +207,87 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
           ) : (
-            /* In Production: Verified, Immutable Identity Badge - Impersonation Disallowed */
-            <div 
-              id="verified-partner-badge"
-              className="flex items-center gap-1.5 bg-stone-100 border border-stone-200/90 px-2.5 py-1 rounded-full text-xs"
-              title={`Authenticated as ${activePartner.name} (${activePartner.email}) - UID Verified`}
-            >
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
-                style={{ backgroundColor: activePartner.avatarColor }}
+            /* In Production: Verified Identity Button with Logout & Profile Menu */
+            <div className="relative">
+              <button 
+                id="user-profile-menu-btn"
+                onClick={() => {
+                  setShowUserMenu(!showUserMenu);
+                  setShowProjectMenu(false);
+                }}
+                className="flex items-center gap-1.5 bg-stone-100 hover:bg-stone-200/80 active:scale-95 border border-stone-200/90 px-2.5 py-1 rounded-full text-xs transition-all cursor-pointer"
+                title={`Logged in as ${activePartner.name} (${activePartner.email}) - Click for options`}
               >
-                {activePartner.name.charAt(0)}
-              </div>
-              <span className="text-xs font-semibold text-stone-800">
-                {activePartner.name.split(' ')[0]}
-              </span>
-              <Lock className="w-3 h-3 text-stone-400 ml-0.5" />
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
+                  style={{ backgroundColor: activePartner.avatarColor }}
+                >
+                  {activePartner.name.charAt(0)}
+                </div>
+                <span className="text-xs font-semibold text-stone-800">
+                  {activePartner.name.split(' ')[0]}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-stone-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Prod User Profile & Logout Dropdown */}
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-stone-200 rounded-2xl shadow-xl py-2 z-50 animate-in fade-in">
+                  {/* Account Header */}
+                  <div className="px-3.5 pb-2.5 border-b border-stone-100">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-2xs flex-shrink-0"
+                        style={{ backgroundColor: activePartner.avatarColor }}
+                      >
+                        {activePartner.name.charAt(0)}
+                      </div>
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-stone-900 truncate">
+                          {activePartner.name}
+                        </div>
+                        <div className="text-[10px] text-stone-500 truncate">
+                          {activePartner.email || 'Google Account'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-lg border border-emerald-200/60 font-medium">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                      <span className="truncate">
+                        {activePartner.role} • {activePartner.equityPercentage}% Share
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-1.5 px-1.5 space-y-0.5">
+                    <button
+                      id="header-new-venture-shortcut"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        onOpenNewProjectModal();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-stone-700 hover:bg-stone-50 rounded-xl transition-colors font-medium text-left"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>New Venture / Project</span>
+                    </button>
+
+                    <button
+                      id="header-logout-btn"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        onSignOut();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition-colors font-semibold text-left"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Log Out (लॉग आउट)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

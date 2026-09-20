@@ -8,8 +8,7 @@ import {
   query, 
   where, 
   onSnapshot, 
-  Unsubscribe,
-  orderBy
+  Unsubscribe 
 } from 'firebase/firestore';
 import { Project, LedgerEntry, AuditLogItem, UserProfile } from '../types';
 
@@ -18,11 +17,37 @@ const COLLECTION_ENTRIES = 'entries';
 const COLLECTION_AUDIT = 'auditLogs';
 const COLLECTION_USERS = 'users';
 
+/**
+ * Recursively strips any object keys where value is `undefined`.
+ * Firestore strictly rejects documents containing undefined values.
+ */
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => cleanForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
 // User Profile save / fetch
 export async function saveUserProfile(user: UserProfile): Promise<void> {
   try {
-    const userRef = doc(db, COLLECTION_USERS, user.uid);
-    await setDoc(userRef, user, { merge: true });
+    const cleaned = cleanForFirestore(user);
+    const userRef = doc(db, COLLECTION_USERS, cleaned.uid);
+    await setDoc(userRef, cleaned, { merge: true });
   } catch (err) {
     console.error('Error saving user profile:', err);
   }
@@ -69,14 +94,12 @@ export async function linkPendingEmailInvitations(
 
       if (changed) {
         const projectRef = doc(db, COLLECTION_PROJECTS, project.id);
-        await setDoc(
-          projectRef,
-          {
-            authorizedUserUids: Array.from(uids),
-            partners: updatedPartners,
-          },
-          { merge: true }
-        );
+        const updatePayload = cleanForFirestore({
+          authorizedUserUids: Array.from(uids),
+          partners: updatedPartners,
+        });
+        await setDoc(projectRef, updatePayload, { merge: true });
+        console.log(`[Auto-Allocate] Linked user ${userUid} (${normalizedEmail}) to project "${project.name}" (${project.id})`);
       }
     }
   } catch (err) {
@@ -85,11 +108,13 @@ export async function linkPendingEmailInvitations(
 }
 
 /**
- * Subscribes ONLY to projects where the authenticated user is an authorized member.
- * Does NOT fetch all projects and filter on the client.
+ * Subscribes to projects where the authenticated user is an authorized member.
+ * Supports both direct authorizedUserUids matching AND authorizedEmails matching,
+ * so invited partners see their allocated projects immediately upon signing in.
  */
 export function subscribeToUserProjects(
   userUid: string,
+  userEmail: string | null | undefined,
   onUpdate: (projects: Project[]) => void,
   onError?: (error: any) => void
 ): Unsubscribe {
@@ -98,38 +123,101 @@ export function subscribeToUserProjects(
     return () => {};
   }
 
-  // Real multi-tenant query: only docs where userUid is in authorizedUserUids
-  const q = query(
+  const projectsMap = new Map<string, Project>();
+
+  const emit = () => {
+    const list = Array.from(projectsMap.values());
+    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    onUpdate(list);
+  };
+
+  const unsubs: Unsubscribe[] = [];
+
+  // 1. Query by UID in authorizedUserUids
+  const qUid = query(
     collection(db, COLLECTION_PROJECTS),
     where('authorizedUserUids', 'array-contains', userUid)
   );
 
-  return onSnapshot(
-    q,
+  const unsubUid = onSnapshot(
+    qUid,
     (snapshot) => {
-      const projects: Project[] = [];
-      snapshot.forEach((d) => {
-        projects.push(d.data() as Project);
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'removed') {
+          // Only remove if not kept by email query
+          const current = projectsMap.get(change.doc.id);
+          const normalizedEmail = userEmail?.trim().toLowerCase();
+          if (current && (!normalizedEmail || !current.authorizedEmails?.includes(normalizedEmail))) {
+            projectsMap.delete(change.doc.id);
+          }
+        } else {
+          projectsMap.set(change.doc.id, change.doc.data() as Project);
+        }
       });
-      onUpdate(projects);
+      emit();
     },
     (err) => {
-      console.error('Error fetching authorized projects:', err);
+      console.error('Error fetching authorized projects by UID:', err);
       if (onError) onError(err);
     }
   );
+  unsubs.push(unsubUid);
+
+  // 2. Query by Email in authorizedEmails (for newly invited partners whose UID is being linked)
+  if (userEmail) {
+    const normalizedEmail = userEmail.trim().toLowerCase();
+    const qEmail = query(
+      collection(db, COLLECTION_PROJECTS),
+      where('authorizedEmails', 'array-contains', normalizedEmail)
+    );
+
+    const unsubEmail = onSnapshot(
+      qEmail,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'removed') {
+            const current = projectsMap.get(change.doc.id);
+            if (current && !current.authorizedUserUids?.includes(userUid)) {
+              projectsMap.delete(change.doc.id);
+            }
+          } else {
+            projectsMap.set(change.doc.id, change.doc.data() as Project);
+          }
+        });
+        emit();
+      },
+      (err) => {
+        console.warn('Query for authorized email projects encountered notice:', err);
+      }
+    );
+    unsubs.push(unsubEmail);
+  }
+
+  return () => {
+    unsubs.forEach((unsub) => unsub());
+  };
 }
 
 // Save or update Project
 export async function saveProjectToFirestore(project: Project): Promise<void> {
-  const authorizedEmails = new Set(project.authorizedEmails || []);
+  const authorizedEmails = new Set<string>();
+  if (project.authorizedEmails) {
+    project.authorizedEmails.forEach((e) => {
+      if (e) authorizedEmails.add(e.trim().toLowerCase());
+    });
+  }
   if (project.partners) {
     project.partners.forEach((p) => {
       if (p.email) authorizedEmails.add(p.email.trim().toLowerCase());
     });
   }
 
-  const uids = new Set(project.authorizedUserUids || []);
+  const uids = new Set<string>();
+  if (project.authorizedUserUids) {
+    project.authorizedUserUids.forEach((u) => {
+      if (u) uids.add(u);
+    });
+  }
   if (project.ownerUid) uids.add(project.ownerUid);
   if (project.partners) {
     project.partners.forEach((p) => {
@@ -143,8 +231,10 @@ export async function saveProjectToFirestore(project: Project): Promise<void> {
     authorizedUserUids: Array.from(uids),
   };
 
-  const projectRef = doc(db, COLLECTION_PROJECTS, payload.id);
-  await setDoc(projectRef, payload, { merge: true });
+  const cleaned = cleanForFirestore(payload);
+  const projectRef = doc(db, COLLECTION_PROJECTS, cleaned.id);
+  await setDoc(projectRef, cleaned, { merge: true });
+  console.log(`[Firestore] Project "${cleaned.name}" (${cleaned.id}) saved to Firestore.`);
 }
 
 // Delete Project (Owner only)
@@ -190,8 +280,10 @@ export function subscribeToProjectEntries(
 
 // Save or update Entry
 export async function saveEntryToFirestore(entry: LedgerEntry): Promise<void> {
-  const entryRef = doc(db, COLLECTION_ENTRIES, entry.id);
-  await setDoc(entryRef, entry, { merge: true });
+  const cleaned = cleanForFirestore(entry);
+  const entryRef = doc(db, COLLECTION_ENTRIES, cleaned.id);
+  await setDoc(entryRef, cleaned, { merge: true });
+  console.log(`[Firestore] Ledger entry "${cleaned.title}" (${cleaned.id}) saved to Firestore.`);
 }
 
 // Delete Entry (only unapproved drafts or pending entries permitted)
@@ -238,6 +330,8 @@ export function subscribeToProjectAuditLogs(
 
 // Save Audit Log Item (Append-only)
 export async function saveAuditLogToFirestore(log: AuditLogItem): Promise<void> {
-  const logRef = doc(db, COLLECTION_AUDIT, log.id);
-  await setDoc(logRef, log);
+  const cleaned = cleanForFirestore(log);
+  const logRef = doc(db, COLLECTION_AUDIT, cleaned.id);
+  await setDoc(logRef, cleaned);
+  console.log(`[Firestore] Audit log (${cleaned.id}) saved to Firestore.`);
 }

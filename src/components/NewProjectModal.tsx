@@ -37,10 +37,14 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     ];
 
     if (partner2Name.trim()) {
+      const normalizedPartnerEmail = partner2Email.trim()
+        ? partner2Email.trim().toLowerCase()
+        : `${partner2Name.toLowerCase().replace(/\s+/g, '')}@partner.com`;
+
       partners.push({
         id: `partner_${Date.now()}`,
         name: partner2Name.trim(),
-        email: partner2Email.trim() || `${partner2Name.toLowerCase().replace(/\s+/g, '')}@partner.com`,
+        email: normalizedPartnerEmail,
         role: 'Co-Founder',
         equityPercentage: Number(partner2Equity) || 50,
         avatarColor: '#4f46e5',
@@ -58,7 +62,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       partners,
       ownerUid: activePartner.uid || 'user',
       authorizedUserUids: activePartner.uid ? [activePartner.uid] : [],
-      authorizedEmails: partners.map(p => p.email).filter(Boolean) as string[],
+      authorizedEmails: partners
+        .map(p => (p.email ? p.email.trim().toLowerCase() : ''))
+        .filter(Boolean) as string[],
     };
 
     onCreateProject(newProject);

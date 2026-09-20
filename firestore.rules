@@ -55,6 +55,17 @@ service cloud.firestore {
       return parentProj != null && isProjectOwnerData(parentProj);
     }
 
+    // Check if an invited partner is linking their own authenticated UID to their authorized email seat
+    function isClaimingAuthorizedEmail(prevData, nextData) {
+      return currentUserEmail() != null &&
+        prevData.authorizedEmails != null &&
+        currentUserEmail() in prevData.authorizedEmails &&
+        nextData.ownerUid == prevData.ownerUid &&
+        nextData.currency == prevData.currency &&
+        nextData.defaultApprovalThreshold == prevData.defaultApprovalThreshold &&
+        nextData.authorizedEmails == prevData.authorizedEmails;
+    }
+
     // -------------------------------------------------------------
     // Users Collection (Private per UID)
     // -------------------------------------------------------------
@@ -76,8 +87,12 @@ service cloud.firestore {
       );
 
       // Update:
-      // Sensitive operations (partners, authorization lists, approval thresholds, currency) require OWNER permission
+      // Sensitive operations (partners, authorization lists, approval thresholds, currency) require OWNER permission,
+      // EXCEPT when an invited partner claims their seat matching their authenticated email.
       allow update: if isAuthenticated() && isProjectAuthorized(resource.data) && (
+        isProjectOwnerData(resource.data) ||
+        (resource.data.isDemo == true && isAnonymousUser()) ||
+        isClaimingAuthorizedEmail(resource.data, request.resource.data) ||
         // If sensitive governance fields change, caller MUST be the project owner
         (
           request.resource.data.ownerUid == resource.data.ownerUid &&
@@ -86,9 +101,7 @@ service cloud.firestore {
           request.resource.data.partners == resource.data.partners &&
           request.resource.data.defaultApprovalThreshold == resource.data.defaultApprovalThreshold &&
           request.resource.data.currency == resource.data.currency
-        ) ||
-        isProjectOwnerData(resource.data) ||
-        (resource.data.isDemo == true && isAnonymousUser())
+        )
       );
 
       // Delete: Only owner can delete the project

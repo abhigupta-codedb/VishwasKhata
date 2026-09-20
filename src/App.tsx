@@ -121,9 +121,10 @@ export default function App() {
       return;
     }
 
-    // Subscribe ONLY to authorized projects for this user UID
+    // Subscribe to authorized projects for this user UID & Email
     const unsubProjects = subscribeToUserProjects(
       authUser.uid,
+      authUser.email,
       (authorizedProjects) => {
         setProjects(authorizedProjects);
         if (authorizedProjects.length > 0) {
@@ -339,8 +340,12 @@ export default function App() {
 
     // Persist to Firestore only if production
     if (!isDemoMode && authUser) {
-      await saveEntryToFirestore(newEntry);
-      await saveAuditLogToFirestore(auditItem);
+      try {
+        await saveEntryToFirestore(newEntry);
+        await saveAuditLogToFirestore(auditItem);
+      } catch (err) {
+        console.error('Failed to persist entry or audit log to Firestore:', err);
+      }
     }
   };
 
@@ -628,26 +633,34 @@ export default function App() {
   };
 
   const handleCreateProject = async (newProjectData: Project) => {
-    const projectWithOwner: Project = {
-      ...newProjectData,
-      ownerUid: authUser?.uid || 'user',
-      authorizedUserUids: authUser?.uid ? [authUser.uid] : [],
-      authorizedEmails: [
-        ...(currentUserProfile?.email ? [currentUserProfile.email.toLowerCase()] : []),
-        ...newProjectData.partners.map((p) => (p.email ? p.email.toLowerCase() : '')).filter(Boolean),
-      ],
-      isDemo: isDemoMode,
-    };
+    try {
+      const allAuthorizedEmails = new Set<string>();
+      if (currentUserProfile?.email) allAuthorizedEmails.add(currentUserProfile.email.trim().toLowerCase());
+      if (authUser?.email) allAuthorizedEmails.add(authUser.email.trim().toLowerCase());
+      newProjectData.partners.forEach((p) => {
+        if (p.email) allAuthorizedEmails.add(p.email.trim().toLowerCase());
+      });
 
-    setProjects((prev) => [projectWithOwner, ...prev]);
-    setActiveProjectId(projectWithOwner.id);
-    if (projectWithOwner.partners.length > 0 && isDemoMode) {
-      setActivePartnerId(projectWithOwner.partners[0].id);
-    }
-    setCurrentTab('timeline');
+      const projectWithOwner: Project = {
+        ...newProjectData,
+        ownerUid: authUser?.uid || 'user',
+        authorizedUserUids: authUser?.uid ? [authUser.uid] : [],
+        authorizedEmails: Array.from(allAuthorizedEmails),
+        isDemo: isDemoMode,
+      };
 
-    if (!isDemoMode && authUser) {
-      await saveProjectToFirestore(projectWithOwner);
+      setProjects((prev) => [projectWithOwner, ...prev]);
+      setActiveProjectId(projectWithOwner.id);
+      if (projectWithOwner.partners.length > 0 && isDemoMode) {
+        setActivePartnerId(projectWithOwner.partners[0].id);
+      }
+      setCurrentTab('timeline');
+
+      if (!isDemoMode && authUser) {
+        await saveProjectToFirestore(projectWithOwner);
+      }
+    } catch (err) {
+      console.error('Failed to create project in Firestore:', err);
     }
   };
 
@@ -769,6 +782,7 @@ export default function App() {
           pendingApprovalsForActivePartner={pendingApprovalsForActivePartner}
           onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
           onNavigateToApprovals={() => setCurrentTab('approvals')}
+          onSignOut={handleSignOut}
         />
 
         {/* View Router */}
