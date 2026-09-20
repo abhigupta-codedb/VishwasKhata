@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { EntryType, LedgerEntry, Partner, Project } from '../types';
+import React, { useState, useMemo } from 'react';
+import { EntryType, LedgerEntry, Partner, Project, Attachment } from '../types';
+import { getApprovalRequirement } from '../utils/approvalPolicy';
+import { uploadEntryAttachment } from '../services/attachmentStorageService';
 import { 
   X, 
   Coins, 
@@ -12,7 +14,10 @@ import {
   Check, 
   Paperclip,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  ShieldCheck,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 
 interface AddEntryModalProps {
@@ -27,7 +32,7 @@ interface AddEntryModalProps {
     category?: string;
   };
   onClose: () => void;
-  onSubmit: (entry: Omit<LedgerEntry, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'amendments' | 'votes' | 'comments' | 'status'>) => void;
+  onSubmit: (entry: Omit<LedgerEntry, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'amendments' | 'votes' | 'comments' | 'status'> & { status: 'pending' | 'approved' }) => void;
 }
 
 const ENTRY_TYPES: { type: EntryType; label: string; sub: string; icon: React.ReactNode }[] = [
@@ -120,34 +125,48 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'NetBanking' | 'Card' | 'Cash' | 'Cheque'>('UPI');
   const [gstInvoice, setGstInvoice] = useState('');
 
-  // Approvers
-  const otherPartnerIds = project.partners.filter(p => p.id !== activePartner.id).map(p => p.id);
-  const [requiresApproval, setRequiresApproval] = useState(true);
-
-  // Attachments
-  const [attachments, setAttachments] = useState<{ id: string; name: string; fileType: string; url: string; sizeKb: number; uploadedAt: string }[]>([]);
+  // Attachments & upload state
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const isFinancial = ['capital_contribution', 'partner_loan', 'personal_expense', 'project_expense', 'reimbursement', 'withdrawal'].includes(type);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Mandatory Centralized Approval Requirement calculation
+  const approvalRequirement = useMemo(() => {
+    return getApprovalRequirement(project, {
+      type,
+      amount: isFinancial ? Number(amount) || 0 : undefined,
+      createdByPartnerId: activePartner.id,
+      payerPartnerId: ['capital_contribution', 'partner_loan', 'personal_expense'].includes(type) ? payerPartnerId : undefined,
+    });
+  }, [project, type, amount, activePartner.id, payerPartnerId, isFinancial]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAttachments(prev => [
-        ...prev,
-        {
-          id: `att_${Date.now()}`,
-          name: file.name,
-          fileType: file.type || 'application/octet-stream',
-          url: reader.result as string,
-          sizeKb: Math.round(file.size / 1024),
-          uploadedAt: new Date().toISOString(),
-        },
-      ]);
-    };
-    reader.readAsDataURL(file);
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const entryId = `entry_temp_${Date.now()}`;
+      const attachmentMeta = await uploadEntryAttachment({
+        file,
+        projectId: project.id,
+        entryId,
+        uploaderUid: activePartner.uid,
+        isDemo: project.isDemo,
+      });
+
+      setAttachments(prev => [...prev, attachmentMeta]);
+    } catch (err: any) {
+      console.error('File upload error:', err);
+      setUploadError(err.message || 'Failed to upload receipt');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -159,11 +178,11 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
     }
 
     if (isFinancial && (!amount || Number(amount) <= 0)) {
-      alert('Please enter an amount.');
+      alert('Please enter a valid amount.');
       return;
     }
 
-    const approvers = requiresApproval ? otherPartnerIds : [];
+    const initialStatus = approvalRequirement.level === 'none' ? 'approved' : 'pending';
 
     onSubmit({
       projectId: project.id,
@@ -175,13 +194,16 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
       currency: project.currency,
       date,
       createdByPartnerId: activePartner.id,
+      createdByUid: activePartner.uid,
       payerPartnerId: ['capital_contribution', 'partner_loan', 'personal_expense'].includes(type) ? payerPartnerId : undefined,
       recipientPartnerId: ['reimbursement', 'withdrawal'].includes(type) ? recipientPartnerId : undefined,
       paymentMethod: isFinancial ? paymentMethod : undefined,
       gstInvoice: gstInvoice.trim() || undefined,
-      requiredApproverPartnerIds: approvers,
+      requiredApproverPartnerIds: approvalRequirement.requiredApproverPartnerIds,
+      approvalRequirement: approvalRequirement.level,
       attachments,
       decisionOptions: type === 'decision' ? ['Approve', 'Reject'] : undefined,
+      status: initialStatus,
     });
 
     onClose();
@@ -195,7 +217,7 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
         <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between bg-stone-50">
           <div>
             <h3 className="text-sm font-bold text-stone-900">New Entry (नया खाता प्रविष्टि)</h3>
-            <p className="text-[11px] text-stone-500">Shared with all partners</p>
+            <p className="text-[11px] text-stone-500">Auto-governed by partnership agreement</p>
           </div>
           <button
             id="close-add-modal-btn"
@@ -209,7 +231,7 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
         {/* Scrollable Form Body */}
         <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
           
-          {/* Big Indian Rupee Amount Field */}
+          {/* Indian Rupee Amount Field */}
           {isFinancial && (
             <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 text-center">
               <span className="text-[11px] font-medium text-stone-500 block">
@@ -249,9 +271,11 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
                       : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
                   }`}
                 >
-                  <div className="mt-0.5">{t.icon}</div>
-                  <div className="min-w-0">
-                    <div className="text-xs truncate">{t.label}</div>
+                  <div className="p-1 bg-stone-100 rounded-lg flex-shrink-0 mt-0.5">
+                    {t.icon}
+                  </div>
+                  <div className="truncate">
+                    <div className="text-xs font-semibold leading-tight">{t.label}</div>
                     <div className="text-[10px] text-stone-400 truncate">{t.sub}</div>
                   </div>
                 </button>
@@ -259,66 +283,65 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
             </div>
           </div>
 
-          {/* Title / For What */}
+          {/* Title / Description Field */}
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-stone-600 block">
-              What is this for? (शीर्षक)
+              Description / Title (विवरण) <span className="text-rose-500">*</span>
             </label>
             <input
               id="entry-title-input"
               type="text"
-              placeholder="e.g. Indiranagar Coworking Rent, AWS Server Bill, Client Lunch"
+              placeholder="e.g. Server hosting bill, Office desk setup, Poonji wire"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none focus:border-emerald-600"
               required
             />
           </div>
 
-          {/* Payment Method & Paid By (If financial) */}
-          {isFinancial && (
-            <div className="grid grid-cols-2 gap-3">
-              {/* Payment Mode */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-stone-600 block">
-                  Payment Mode (माध्यम)
-                </label>
-                <select
-                  id="entry-payment-method"
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="w-full px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
-                >
-                  {PAYMENT_MODES.map(mode => (
-                    <option key={mode} value={mode}>{mode}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Paid By / Recipient */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-stone-600 block">
-                  {type === 'reimbursement' ? 'Recipient Partner' : 'Paid By'}
-                </label>
-                <select
-                  id="entry-payer-partner"
-                  value={type === 'reimbursement' ? recipientPartnerId : payerPartnerId}
-                  onChange={(e) => {
-                    if (type === 'reimbursement') setRecipientPartnerId(e.target.value);
-                    else setPayerPartnerId(e.target.value);
-                  }}
-                  className="w-full px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
-                >
-                  {project.partners.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+          {/* Dynamic Partner Attribution */}
+          {['capital_contribution', 'partner_loan', 'personal_expense'].includes(type) && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-stone-600 block">
+                Paid by Partner (किसने भुगतान किया)
+              </label>
+              <select
+                id="entry-payer-select"
+                value={payerPartnerId}
+                onChange={(e) => setPayerPartnerId(e.target.value)}
+                className="w-full px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
+              >
+                {project.partners.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.role}) - {p.equityPercentage}% equity
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
-          {/* Category & Date */}
-          <div className="grid grid-cols-2 gap-3">
+          {['reimbursement', 'withdrawal'].includes(type) && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-stone-600 block">
+                Pay to Partner (किसको मिलेगा)
+              </label>
+              <select
+                id="entry-recipient-select"
+                value={recipientPartnerId}
+                onChange={(e) => setRecipientPartnerId(e.target.value)}
+                className="w-full px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
+              >
+                {project.partners.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Category and Date Row */}
+          <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-stone-600 block">
                 Category
@@ -329,8 +352,10 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
               >
-                {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
                 ))}
               </select>
             </div>
@@ -349,11 +374,36 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
             </div>
           </div>
 
-          {/* Optional GST Invoice & Receipt */}
+          {/* Payment Method */}
+          {isFinancial && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-stone-600 block">
+                Payment Mode (भुगतान माध्यम)
+              </label>
+              <div className="grid grid-cols-5 gap-1">
+                {PAYMENT_MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaymentMethod(mode)}
+                    className={`py-1.5 text-center text-[10px] font-semibold rounded-lg border transition-all ${
+                      paymentMethod === mode
+                        ? 'bg-stone-900 text-white border-stone-900 shadow-2xs'
+                        : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Optional GST Invoice & Receipt Attachment */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold text-stone-600 block">
-                Bill / Receipt & GST (वैकल्पिक)
+                Bill / Receipt & GST (रसीद और जीएसटी)
               </label>
             </div>
 
@@ -367,25 +417,42 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
                 className="px-2.5 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none"
               />
 
-              {/* Upload button */}
+              {/* Upload button via Cloud Storage */}
               <label className="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-stone-100 hover:bg-stone-200/70 border border-stone-200 rounded-xl cursor-pointer text-stone-700 font-medium transition-colors">
-                <UploadCloud className="w-4 h-4 text-stone-500" />
-                <span>Attach Receipt</span>
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4 text-stone-500" />
+                    <span>Attach Receipt</span>
+                  </>
+                )}
                 <input
                   type="file"
-                  accept="image/*,.pdf"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  disabled={isUploading}
                   onChange={handleFileUpload}
                   className="hidden"
                 />
               </label>
             </div>
 
+            {uploadError && (
+              <div className="text-[10px] text-rose-600 flex items-center gap-1 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{uploadError}</span>
+              </div>
+            )}
+
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {attachments.map((att, idx) => (
                   <span key={att.id} className="text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-1 rounded-lg flex items-center gap-1">
                     <Paperclip className="w-3 h-3" />
-                    <span className="truncate max-w-[120px]">{att.name}</span>
+                    <span className="truncate max-w-[120px]">{att.name} ({att.sizeKb}KB)</span>
                     <button
                       type="button"
                       onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
@@ -399,22 +466,43 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
             )}
           </div>
 
-          {/* Simple Approval Toggle */}
-          <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-semibold text-stone-800 block">
-                Partner Approval Required?
+          {/* MANDATORY APPROVAL POLICY CARD - CANNOT BE BYPASSED BY CREATOR */}
+          <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-stone-800 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                <span>Project Approval Policy</span>
               </span>
-              <span className="text-[10px] text-stone-400">
-                Sends approval requests to all co-partners
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                approvalRequirement.level === 'none' 
+                  ? 'bg-stone-200 text-stone-700' 
+                  : approvalRequirement.level === 'unanimous'
+                  ? 'bg-rose-100 text-rose-800'
+                  : 'bg-amber-100 text-amber-900'
+              }`}>
+                {approvalRequirement.level === 'none' ? 'Pre-Approved' : approvalRequirement.level.replace('_', ' ')}
               </span>
             </div>
-            <input
-              type="checkbox"
-              checked={requiresApproval}
-              onChange={(e) => setRequiresApproval(e.target.checked)}
-              className="w-4 h-4 text-emerald-600 rounded border-stone-300"
-            />
+
+            <p className="text-xs font-semibold text-stone-900">
+              {approvalRequirement.label}
+            </p>
+            <p className="text-[10px] text-stone-500 leading-snug">
+              {approvalRequirement.description}
+            </p>
+            {approvalRequirement.requiredApproverPartnerIds.length > 0 && (
+              <div className="text-[10px] text-stone-500 pt-1 flex items-center gap-1 flex-wrap">
+                <span>Sign-off requested from:</span>
+                {approvalRequirement.requiredApproverPartnerIds.map(pid => {
+                  const p = project.partners.find(item => item.id === pid);
+                  return (
+                    <span key={pid} className="font-semibold text-stone-800 bg-white px-1.5 py-0.5 rounded border border-stone-200">
+                      {p?.name.split(' ')[0] || pid}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Submit Action */}
@@ -422,7 +510,8 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
             <button
               id="submit-entry-btn"
               type="submit"
-              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5"
+              disabled={isUploading}
+              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
               <span>Record in Khata (खाते में दर्ज करें)</span>

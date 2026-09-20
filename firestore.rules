@@ -21,17 +21,25 @@ service cloud.firestore {
       return request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
+    // Check if user is owner of the project document
+    function isProjectOwnerData(projectData) {
+      return projectData.ownerUid != null && projectData.ownerUid == currentUserUid();
+    }
+
     // Check if the current user has access to a project document
     function isProjectAuthorized(projectData) {
       return (
-        // Demo project flag allows demo / anonymous exploration
+        // Demo project flag allows demo / anonymous exploration only for demo data
         (projectData.isDemo == true && isAnonymousUser()) ||
-        // Owner UID matches
-        (projectData.ownerUid != null && projectData.ownerUid == currentUserUid()) ||
-        // UID in authorizedUserUids list
-        (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
-        // Email matches authorizedEmails list
-        (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
+        // Real authenticated user access
+        (!isAnonymousUser() && (
+          // Owner UID matches
+          isProjectOwnerData(projectData) ||
+          // UID in authorizedUserUids list
+          (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
+          // Email matches authorizedEmails list
+          (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
+        ))
       );
     }
 
@@ -39,6 +47,12 @@ service cloud.firestore {
     function canAccessParentProject(projectId) {
       let parentProj = get(/databases/$(database)/documents/projects/$(projectId)).data;
       return parentProj != null && isProjectAuthorized(parentProj);
+    }
+
+    // Check if user is project owner via get() fetch
+    function isParentProjectOwner(projectId) {
+      let parentProj = get(/databases/$(database)/documents/projects/$(projectId)).data;
+      return parentProj != null && isProjectOwnerData(parentProj);
     }
 
     // -------------------------------------------------------------
@@ -55,21 +69,31 @@ service cloud.firestore {
       // Read: Can only read if authorized for this specific project
       allow read: if isAuthenticated() && isProjectAuthorized(resource.data);
 
-      // Create: Signed-in user can create a project where they are set as ownerUid or authorizedUserUid
+      // Create: Signed-in user can create a project where they are set as ownerUid
       allow create: if isAuthenticated() && (
         (isAnonymousUser() && request.resource.data.isDemo == true) ||
-        (!isAnonymousUser() && (
-          request.resource.data.ownerUid == currentUserUid() ||
-          (request.resource.data.authorizedUserUids != null && currentUserUid() in request.resource.data.authorizedUserUids)
-        ))
+        (!isAnonymousUser() && request.resource.data.ownerUid == currentUserUid())
       );
 
-      // Update: Only authorized members can update the project
-      allow update: if isAuthenticated() && isProjectAuthorized(resource.data);
+      // Update:
+      // Sensitive operations (partners, authorization lists, approval thresholds, currency) require OWNER permission
+      allow update: if isAuthenticated() && isProjectAuthorized(resource.data) && (
+        // If sensitive governance fields change, caller MUST be the project owner
+        (
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.authorizedUserUids == resource.data.authorizedUserUids &&
+          request.resource.data.authorizedEmails == resource.data.authorizedEmails &&
+          request.resource.data.partners == resource.data.partners &&
+          request.resource.data.defaultApprovalThreshold == resource.data.defaultApprovalThreshold &&
+          request.resource.data.currency == resource.data.currency
+        ) ||
+        isProjectOwnerData(resource.data) ||
+        (resource.data.isDemo == true && isAnonymousUser())
+      );
 
       // Delete: Only owner can delete the project
       allow delete: if isAuthenticated() && (
-        resource.data.ownerUid == currentUserUid() ||
+        isProjectOwnerData(resource.data) ||
         (resource.data.isDemo == true && isAnonymousUser())
       );
 
@@ -80,7 +104,7 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Entries Collection (Linked to Project Multi-Tenancy)
+    // Entries Collection (Linked to Project Multi-Tenancy & Immutability)
     // -------------------------------------------------------------
     match /entries/{entryId} {
       // Read: Allowed only if user is authorized for the parent project
@@ -88,35 +112,64 @@ service cloud.firestore {
         resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
       );
 
-      // Create: Allowed only if user is authorized for the target project
+      // Create: Allowed only if user is authorized for target project and createdByUid matches
       allow create: if isAuthenticated() && (
-        request.resource.data.projectId != null && canAccessParentProject(request.resource.data.projectId)
+        request.resource.data.projectId != null &&
+        canAccessParentProject(request.resource.data.projectId) &&
+        (isAnonymousUser() || request.resource.data.createdByUid == currentUserUid())
       );
 
-      // Update: Allowed only if user is authorized for the project
+      // Update: Authorized members only, enforce immutability on approved entries
       allow update: if isAuthenticated() && (
-        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+        resource.data.projectId != null &&
+        canAccessParentProject(resource.data.projectId) &&
+        request.resource.data.projectId == resource.data.projectId &&
+        // If already approved, protect financial fields from direct overwriting unless through an amendment
+        (
+          resource.data.status != 'approved' ||
+          (
+            request.resource.data.amendments != null &&
+            request.resource.data.amendments.size() > resource.data.amendments.size()
+          ) ||
+          // Comments or attachment metadata additions allowed
+          (
+            request.resource.data.amount == resource.data.amount &&
+            request.resource.data.type == resource.data.type &&
+            request.resource.data.date == resource.data.date &&
+            request.resource.data.payerPartnerId == resource.data.payerPartnerId &&
+            request.resource.data.recipientPartnerId == resource.data.recipientPartnerId
+          )
+        )
       );
 
-      // Delete: Allowed only if user is authorized for the project
+      // Delete: Only unapproved drafts or pending records can be deleted by creator or owner
       allow delete: if isAuthenticated() && (
-        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+        resource.data.status != 'approved' &&
+        resource.data.projectId != null &&
+        (
+          isAnonymousUser() ||
+          resource.data.createdByUid == currentUserUid() ||
+          isParentProjectOwner(resource.data.projectId)
+        )
       );
     }
 
     // -------------------------------------------------------------
-    // Audit Logs Collection (Linked to Project Multi-Tenancy)
+    // Audit Logs Collection (Append-Only, Project Scoped)
     // -------------------------------------------------------------
     match /auditLogs/{logId} {
       allow read: if isAuthenticated() && (
         resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
       );
 
+      // Create: Actor must be the authenticated user
       allow create: if isAuthenticated() && (
-        request.resource.data.projectId != null && canAccessParentProject(request.resource.data.projectId)
+        request.resource.data.projectId != null &&
+        canAccessParentProject(request.resource.data.projectId) &&
+        (isAnonymousUser() || request.resource.data.actorUid == currentUserUid())
       );
 
-      // Audit logs are append-only; disallow update and delete for tampering prevention
+      // Strictly append-only: no edits or deletions permitted
       allow update, delete: if false;
     }
   }

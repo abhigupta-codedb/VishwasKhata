@@ -7,13 +7,16 @@ import {
   CheckCircle2, 
   Clock, 
   Plus, 
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 
 interface HeaderProps {
   currentProject: Project;
   projects: Project[];
   activePartner: Partner;
+  isDemoMode: boolean;
   onSelectProject: (projectId: string) => void;
   onSelectPartner: (partnerId: string) => void;
   pendingApprovalsForActivePartner: number;
@@ -25,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentProject,
   projects,
   activePartner,
+  isDemoMode,
   onSelectProject,
   onSelectPartner,
   pendingApprovalsForActivePartner,
@@ -125,77 +129,97 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Active Partner Persona Switcher */}
-          <div className="relative">
-            <button
-              id="partner-persona-btn"
-              onClick={() => {
-                setShowPartnerMenu(!showPartnerMenu);
-                setShowProjectMenu(false);
-              }}
-              className="flex items-center gap-1.5 bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 px-2 py-1 rounded-full text-xs transition-colors"
-              title="Switch partner view"
+          {/* Active Partner Persona Switcher - STRICTLY RESTRICTED TO DEMO MODE */}
+          {isDemoMode ? (
+            <div className="relative">
+              <button
+                id="partner-persona-btn"
+                onClick={() => {
+                  setShowPartnerMenu(!showPartnerMenu);
+                  setShowProjectMenu(false);
+                }}
+                className="flex items-center gap-1.5 bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 px-2 py-1 rounded-full text-xs transition-colors"
+                title="Demo Persona Simulator"
+              >
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
+                  style={{ backgroundColor: activePartner.avatarColor }}
+                >
+                  {activePartner.name.charAt(0)}
+                </div>
+                <span className="text-xs font-medium text-stone-800 pr-0.5">
+                  {activePartner.name.split(' ')[0]}
+                </span>
+                <ChevronDown className="w-3 h-3 text-stone-400" />
+              </button>
+
+              {/* Partner Persona Switcher Dropdown (Demo Only) */}
+              {showPartnerMenu && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-stone-200 rounded-2xl shadow-xl py-1.5 z-50 animate-in fade-in">
+                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 border-b border-stone-100 flex items-center justify-between">
+                    <span>Demo Partner Persona</span>
+                    <span className="text-[9px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
+                      Sandbox Sim
+                    </span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {currentProject.partners.map((partner) => (
+                      <button
+                        key={partner.id}
+                        id={`partner-option-${partner.id}`}
+                        onClick={() => {
+                          onSelectPartner(partner.id);
+                          setShowPartnerMenu(false);
+                        }}
+                        className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-stone-50 transition-colors ${
+                          partner.id === activePartner.id ? 'bg-emerald-50/50 text-emerald-900 font-medium' : 'text-stone-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-2xs flex-shrink-0"
+                            style={{ backgroundColor: partner.avatarColor }}
+                          >
+                            {partner.name.charAt(0)}
+                          </div>
+                          <div className="truncate">
+                            <div className="text-xs font-semibold text-stone-900 flex items-center gap-1.5">
+                              <span className="truncate">{partner.name}</span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-normal">
+                                {partner.equityPercentage}%
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-stone-400 truncate">{partner.role}</div>
+                          </div>
+                        </div>
+                        {partner.id === activePartner.id && (
+                          <UserCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 ml-1" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* In Production: Verified, Immutable Identity Badge - Impersonation Disallowed */
+            <div 
+              id="verified-partner-badge"
+              className="flex items-center gap-1.5 bg-stone-100 border border-stone-200/90 px-2.5 py-1 rounded-full text-xs"
+              title={`Authenticated as ${activePartner.name} (${activePartner.email}) - UID Verified`}
             >
               <div
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
                 style={{ backgroundColor: activePartner.avatarColor }}
               >
                 {activePartner.name.charAt(0)}
               </div>
-              <span className="text-xs font-medium text-stone-800 pr-0.5">
+              <span className="text-xs font-semibold text-stone-800">
                 {activePartner.name.split(' ')[0]}
               </span>
-              <ChevronDown className="w-3 h-3 text-stone-400" />
-            </button>
-
-            {/* Partner Persona Switcher Dropdown */}
-            {showPartnerMenu && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-stone-200 rounded-2xl shadow-xl py-1.5 z-50 animate-in fade-in">
-                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400 border-b border-stone-100 flex items-center justify-between">
-                  <span>Switch Partner View</span>
-                  <span className="text-[9px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
-                    Simulate
-                  </span>
-                </div>
-                <div className="max-h-60 overflow-y-auto">
-                  {currentProject.partners.map((partner) => (
-                    <button
-                      key={partner.id}
-                      id={`partner-option-${partner.id}`}
-                      onClick={() => {
-                        onSelectPartner(partner.id);
-                        setShowPartnerMenu(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-stone-50 transition-colors ${
-                        partner.id === activePartner.id ? 'bg-emerald-50/50 text-emerald-900 font-medium' : 'text-stone-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-2xs flex-shrink-0"
-                          style={{ backgroundColor: partner.avatarColor }}
-                        >
-                          {partner.name.charAt(0)}
-                        </div>
-                        <div className="truncate">
-                          <div className="text-xs font-semibold text-stone-900 flex items-center gap-1.5">
-                            <span className="truncate">{partner.name}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-normal">
-                              {partner.equityPercentage}%
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-stone-400 truncate">{partner.role}</div>
-                        </div>
-                      </div>
-                      {partner.id === activePartner.id && (
-                        <UserCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 ml-1" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              <Lock className="w-3 h-3 text-stone-400 ml-0.5" />
+            </div>
+          )}
         </div>
 
       </div>

@@ -22,6 +22,8 @@ interface MoreViewProps {
   activePartner: Partner;
   auditLog: AuditLogItem[];
   currentUser: UserProfile | null;
+  isProjectOwner?: boolean;
+  isDemoMode?: boolean;
   onSelectPartner: (partnerId: string) => void;
   onSelectProject: (projectId: string) => void;
   onOpenNewProjectModal: () => void;
@@ -37,6 +39,8 @@ export const MoreView: React.FC<MoreViewProps> = ({
   activePartner,
   auditLog,
   currentUser,
+  isProjectOwner = false,
+  isDemoMode = false,
   onSelectPartner,
   onSelectProject,
   onOpenNewProjectModal,
@@ -118,39 +122,84 @@ export const MoreView: React.FC<MoreViewProps> = ({
         </p>
       </div>
 
-      {/* Switch Partner Persona (Clean Stone Card) */}
-      <div className="bg-stone-900 text-white p-4 rounded-2xl shadow-2xs space-y-2.5 border border-stone-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 font-bold text-xs text-stone-200">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Switch Active Partner Persona</span>
+      {/* Partner Identity Card: Restricted persona switching to Demo Mode only */}
+      {isDemoMode ? (
+        <div className="bg-stone-900 text-white p-4 rounded-2xl shadow-2xs space-y-2.5 border border-stone-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-xs text-stone-200">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Demo Partner Persona Simulator</span>
+            </div>
+            <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold">
+              Sandbox Only
+            </span>
           </div>
-          <span className="text-[10px] text-stone-400">Tap to switch</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 pt-1">
-          {project.partners.map((p) => (
-            <button
-              key={p.id}
-              id={`switch-persona-${p.id}`}
-              onClick={() => onSelectPartner(p.id)}
-              className={`p-2 rounded-xl text-center transition-all ${
-                p.id === activePartner.id
-                  ? 'bg-white text-stone-900 font-bold shadow-2xs'
-                  : 'bg-stone-800 hover:bg-stone-750 text-stone-300'
-              }`}
-            >
-              <div
-                className="w-6 h-6 rounded-full mx-auto mb-1 text-[10px] font-bold text-white flex items-center justify-center"
-                style={{ backgroundColor: p.avatarColor }}
+          <p className="text-[11px] text-stone-400">
+            Simulate how approvals, voting, and entries appear from other partners' vantage points.
+          </p>
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            {project.partners.map((p) => (
+              <button
+                key={p.id}
+                id={`switch-persona-${p.id}`}
+                onClick={() => onSelectPartner(p.id)}
+                className={`p-2 rounded-xl text-center transition-all ${
+                  p.id === activePartner.id
+                    ? 'bg-white text-stone-900 font-bold shadow-2xs'
+                    : 'bg-stone-800 hover:bg-stone-750 text-stone-300'
+                }`}
               >
-                {p.name.charAt(0)}
-              </div>
-              <div className="truncate text-xs">{p.name.split(' ')[0]}</div>
-              <div className="text-[10px] opacity-70 font-normal">{p.equityPercentage}%</div>
-            </button>
-          ))}
+                <div
+                  className="w-6 h-6 rounded-full mx-auto mb-1 text-[10px] font-bold text-white flex items-center justify-center"
+                  style={{ backgroundColor: p.avatarColor }}
+                >
+                  {p.name.charAt(0)}
+                </div>
+                <div className="truncate text-xs">{p.name.split(' ')[0]}</div>
+                <div className="text-[10px] opacity-70 font-normal">{p.equityPercentage}%</div>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        /* In Production: Verified, Single-Identity Card */
+        <div className="bg-stone-900 text-white p-4 rounded-2xl shadow-2xs space-y-2 border border-stone-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-400">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Authenticated Project Partner</span>
+            </div>
+            {isProjectOwner ? (
+              <span className="text-[10px] bg-amber-900/80 text-amber-200 border border-amber-700/60 px-2 py-0.5 rounded-full font-bold">
+                Project Owner / Admin
+              </span>
+            ) : (
+              <span className="text-[10px] bg-stone-800 text-stone-300 border border-stone-700 px-2 py-0.5 rounded-full font-medium">
+                Authorized Partner
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-xs"
+              style={{ backgroundColor: activePartner.avatarColor }}
+            >
+              {activePartner.name.charAt(0)}
+            </div>
+            <div className="truncate">
+              <div className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{activePartner.name}</span>
+                <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-800/60">
+                  {activePartner.equityPercentage}% Equity
+                </span>
+              </div>
+              <div className="text-xs text-stone-400 truncate">
+                {activePartner.role} • {currentUser?.email || activePartner.email || 'UID Verified'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Minimal Sub-Navigation Tabs */}
       <div className="flex bg-stone-200/70 p-1 rounded-xl text-xs font-semibold text-stone-600">
@@ -401,18 +450,24 @@ export const MoreView: React.FC<MoreViewProps> = ({
               <span>Export Project JSON</span>
             </button>
 
-            <button
-              id="reset-demo-data-btn"
-              onClick={() => {
-                if (confirm('Reset project data back to clean Indian LLP scenario in Firestore?')) {
-                  onResetData();
-                }
-              }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-semibold text-rose-700 transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset to clean up</span>
-            </button>
+            {isDemoMode ? (
+              <button
+                id="reset-demo-data-btn"
+                onClick={() => {
+                  if (confirm('Reset demo sandbox data to clean sample records?')) {
+                    onResetData();
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-1.5 py-2 bg-stone-100 hover:bg-stone-200/80 border border-stone-200 rounded-xl text-xs font-semibold text-stone-700 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Demo Sandbox Records</span>
+              </button>
+            ) : (
+              <div className="text-[11px] text-stone-400 text-center py-1">
+                Production multi-tenant records are permanently protected by Firestore security rules.
+              </div>
+            )}
           </div>
         </div>
       )}

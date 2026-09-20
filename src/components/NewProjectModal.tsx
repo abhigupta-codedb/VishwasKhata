@@ -56,6 +56,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       defaultApprovalThreshold: 250,
       createdAt: new Date().toISOString(),
       partners,
+      ownerUid: activePartner.uid || 'user',
+      authorizedUserUids: activePartner.uid ? [activePartner.uid] : [],
+      authorizedEmails: partners.map(p => p.email).filter(Boolean) as string[],
     };
 
     onCreateProject(newProject);

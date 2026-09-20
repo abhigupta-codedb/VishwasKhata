@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { LedgerEntry, Partner, Project, VoteDecision } from '../types';
+import { LedgerEntry, Partner, Project, VoteDecision, Attachment } from '../types';
+import { uploadEntryAttachment } from '../services/attachmentStorageService';
 import { 
   formatCurrency, 
   formatDate, 
@@ -25,7 +26,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Check,
-  RotateCcw
+  RotateCcw,
+  Loader2,
+  Lock
 } from 'lucide-react';
 
 interface EntryDetailModalProps {
@@ -35,7 +38,7 @@ interface EntryDetailModalProps {
   onClose: () => void;
   onCastVote: (entryId: string, decision: VoteDecision, note?: string) => void;
   onAddComment: (entryId: string, text: string) => void;
-  onAddAttachment: (entryId: string, file: { name: string; fileType: string; url: string; sizeKb: number }) => void;
+  onAddAttachment: (entryId: string, attachment: Attachment) => void;
   onAmendEntry: (
     entryId: string,
     reason: string,
@@ -113,21 +116,28 @@ export const EntryDetailModal: React.FC<EntryDetailModalProps> = ({
     setCommentInput('');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Url = reader.result as string;
-      onAddAttachment(entry.id, {
-        name: file.name,
-        fileType: file.type || 'application/octet-stream',
-        url: base64Url,
-        sizeKb: Math.round(file.size / 1024),
+    setIsUploadingAttachment(true);
+    try {
+      const attachment = await uploadEntryAttachment({
+        file,
+        projectId: project.id,
+        entryId: entry.id,
+        uploaderUid: activePartner.uid,
+        isDemo: project.isDemo,
       });
-    };
-    reader.readAsDataURL(file);
+      onAddAttachment(entry.id, attachment);
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload attachment');
+    } finally {
+      setIsUploadingAttachment(false);
+      e.target.value = '';
+    }
   };
 
   const handleSaveAmendment = (e: React.FormEvent) => {
@@ -151,7 +161,11 @@ export const EntryDetailModal: React.FC<EntryDetailModalProps> = ({
     if (amendedCategory.trim() !== (entry.category || '')) updates.category = amendedCategory.trim();
     if (amendedDescription.trim() !== (entry.description || '')) updates.description = amendedDescription.trim();
 
-    onAmendEntry(entry.id, amendReason.trim(), updates, requireReapproval);
+    // Material amendments to approved records strictly require partner re-approval per governance policy
+    const isMaterial = updates.amount !== undefined || updates.title !== undefined;
+    const requiresApproval = isMaterial || requireReapproval;
+
+    onAmendEntry(entry.id, amendReason.trim(), updates, requiresApproval);
     setIsAmending(false);
   };
 
@@ -625,17 +639,12 @@ export const EntryDetailModal: React.FC<EntryDetailModalProps> = ({
                       />
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="checkbox"
-                        id="require-reapproval-check"
-                        checked={requireReapproval}
-                        onChange={(e) => setRequireReapproval(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <label htmlFor="require-reapproval-check" className="text-slate-700 text-[11px] cursor-pointer">
-                        Send back to partners for re-approval
-                      </label>
+                    <div className="p-2 bg-blue-100/70 border border-blue-200 rounded-lg flex items-start gap-2 text-[11px] text-blue-900 mt-2">
+                      <ShieldCheck className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold block">Mandatory Governance Policy</span>
+                        <span>Material corrections automatically reset the status to pending co-partner re-approval before new balances take effect.</span>
+                      </div>
                     </div>
                   </div>
 

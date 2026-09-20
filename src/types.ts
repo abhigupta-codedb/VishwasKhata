@@ -14,6 +14,7 @@ export type VoteDecision = 'pending' | 'approved' | 'rejected';
 
 export interface PartnerVote {
   partnerId: string;
+  approverUid?: string; // Trusted Firebase Auth UID
   decision: VoteDecision;
   note?: string;
   timestamp?: string;
@@ -23,14 +24,18 @@ export interface Attachment {
   id: string;
   name: string;
   fileType: string;
-  url: string; // Base64 data URL or external URL
+  mimeType?: string;
+  url: string; // Cloud Storage Download URL or safe reference
+  storagePath?: string; // Firebase Storage path: projects/{projectId}/entries/{entryId}/{fileId}
   sizeKb: number;
+  uploadedByUid?: string;
   uploadedAt: string;
 }
 
 export interface EntryComment {
   id: string;
   partnerId: string;
+  authorUid?: string;
   text: string;
   createdAt: string;
 }
@@ -39,10 +44,12 @@ export interface Amendment {
   id: string;
   version: number;
   amendedByPartnerId: string;
+  amendedByUid?: string;
   reason: string;
   timestamp: string;
   changedFields: string[];
   previousValues: Record<string, any>;
+  approvalRequirement?: 'none' | 'one_partner' | 'majority' | 'unanimous';
 }
 
 export interface LedgerEntry {
@@ -56,9 +63,11 @@ export interface LedgerEntry {
   currency: string;
   date: string;
   createdByPartnerId: string;
+  createdByUid?: string; // Trusted Firebase Auth UID
   payerPartnerId?: string; // Partner who contributed or paid out-of-pocket
   recipientPartnerId?: string; // Partner who received reimbursement or withdrawal
   requiredApproverPartnerIds: string[];
+  approvalRequirement?: 'none' | 'one_partner' | 'majority' | 'unanimous';
   votes: PartnerVote[];
   status: ApprovalStatus;
   rejectionReason?: string;
@@ -77,6 +86,7 @@ export interface LedgerEntry {
 
 export interface Partner {
   id: string;
+  uid?: string; // Mapped Firebase Auth UID
   name: string;
   email: string;
   role: string;
@@ -84,6 +94,7 @@ export interface Partner {
   avatarColor: string;
   status: 'active' | 'invited';
   phone?: string;
+  isOwner?: boolean;
 }
 
 export interface Project {
@@ -94,9 +105,9 @@ export interface Project {
   defaultApprovalThreshold: number;
   createdAt: string;
   partners: Partner[];
-  ownerUid?: string;
-  authorizedUserUids?: string[];
-  authorizedEmails?: string[];
+  ownerUid: string;
+  authorizedUserUids: string[];
+  authorizedEmails: string[];
   isDemo?: boolean;
 }
 
@@ -107,6 +118,7 @@ export interface AuditLogItem {
   entryTitle?: string;
   action: 'create' | 'approve' | 'reject' | 'amend' | 'comment' | 'reimburse';
   performedByPartnerId: string;
+  actorUid?: string; // Trusted Firebase Auth UID
   timestamp: string;
   summary: string;
   details?: string;
