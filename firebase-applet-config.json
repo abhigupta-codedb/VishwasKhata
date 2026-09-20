@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0646209140",
-  "appId": "1:521725685985:web:ac0fcf5fdd5f9d12c947a0",
-  "apiKey": "AIzaSyBYSNZIFMVW7CYOeZWkRgjidkglvaPmNME",
-  "authDomain": "gen-lang-client-0646209140.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-partnerledger-ef49524f-30bc-4567-a637-8def1992515f",
-  "storageBucket": "gen-lang-client-0646209140.firebasestorage.app",
-  "messagingSenderId": "521725685985",
-  "measurementId": "",
-  "oAuthClientId": "521725685985-3mu85svg11r0b83i5l23al3hidrn0fa3.apps.googleusercontent.com",
+  "projectId": "vishwas-khata-app",
+  "appId": "1:663092963808:web:65bee8f17533ea144f6385",
+  "apiKey": "AIzaSyA-o-z9pzdtQZ1Ir3745W1EkmzMAn4O4As",
+  "authDomain": "vishwas-khata-app.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "vishwas-khata-app.firebasestorage.app",
+  "messagingSenderId": "663092963808",
+  "measurementId": "G-33T2GP02JC",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
