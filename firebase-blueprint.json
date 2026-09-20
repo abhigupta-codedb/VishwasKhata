@@ -2,7 +2,7 @@
   "entities": {
     "users": {
       "title": "Users",
-      "description": "User profiles authenticated via Google or demo session",
+      "description": "User profiles authenticated via Google or anonymous sessions",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
@@ -15,7 +15,7 @@
     },
     "projects": {
       "title": "Projects",
-      "description": "Shared business venture or partnership ledger",
+      "description": "Shared business venture or partnership ledger with multi-tenancy access control",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -24,13 +24,17 @@
         "currency": { "type": "string" },
         "defaultApprovalThreshold": { "type": "number" },
         "createdAt": { "type": "string" },
-        "partners": { "type": "array" }
+        "partners": { "type": "array" },
+        "ownerUid": { "type": "string" },
+        "authorizedUserUids": { "type": "array" },
+        "authorizedEmails": { "type": "array" },
+        "isDemo": { "type": "boolean" }
       },
       "required": ["id", "name", "currency", "partners"]
     },
     "entries": {
       "title": "Ledger Entries",
-      "description": "Financial capital contributions, expenses, loans, and reimbursements",
+      "description": "Financial capital contributions, expenses, loans, reimbursements, and decisions belonging to a project",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -41,7 +45,8 @@
         "currency": { "type": "string" },
         "date": { "type": "string" },
         "status": { "type": "string" },
-        "votes": { "type": "array" }
+        "votes": { "type": "array" },
+        "isDemo": { "type": "boolean" }
       },
       "required": ["id", "projectId", "type", "title", "status"]
     },
@@ -55,12 +60,36 @@
         "action": { "type": "string" },
         "performedByPartnerId": { "type": "string" },
         "timestamp": { "type": "string" },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "isDemo": { "type": "boolean" }
       },
       "required": ["id", "projectId", "action", "timestamp", "summary"]
     }
   },
   "firestore": {
-    "rules": "firestore.rules"
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "Individual user document accessible only by the user"
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/projects" },
+      "description": "Project document with tenant security check (ownerUid, authorizedUserUids, authorizedEmails, or demo mode)"
+    },
+    "/projects/{projectId}/entries/{entryId}": {
+      "schema": { "$ref": "#/entities/entries" },
+      "description": "Project ledger entries strictly inheriting parent project multi-tenant membership"
+    },
+    "/projects/{projectId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/auditLogs" },
+      "description": "Project audit logs strictly inheriting parent project multi-tenant membership"
+    },
+    "/entries/{entryId}": {
+      "schema": { "$ref": "#/entities/entries" },
+      "description": "Top-level ledger entries verified against parent project access"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/auditLogs" },
+      "description": "Top-level audit logs verified against parent project access"
+    }
   }
 }

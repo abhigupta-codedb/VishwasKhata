@@ -70,6 +70,7 @@ export interface LedgerEntry {
   selectedOption?: string;
   paymentMethod?: 'UPI' | 'NetBanking' | 'Card' | 'Cash' | 'Cheque';
   gstInvoice?: string;
+  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +94,10 @@ export interface Project {
   defaultApprovalThreshold: number;
   createdAt: string;
   partners: Partner[];
+  ownerUid?: string;
+  authorizedUserUids?: string[];
+  authorizedEmails?: string[];
+  isDemo?: boolean;
 }
 
 export interface AuditLogItem {
@@ -105,6 +110,7 @@ export interface AuditLogItem {
   timestamp: string;
   summary: string;
   details?: string;
+  isDemo?: boolean;
 }
 
 export type NavigationTab = 'timeline' | 'money' | 'add' | 'approvals' | 'more';

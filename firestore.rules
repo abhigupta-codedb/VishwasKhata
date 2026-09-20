@@ -1,35 +1,123 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
+    // -------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // User profile documents
+
+    function currentUserUid() {
+      return request.auth.uid;
+    }
+
+    function currentUserEmail() {
+      return request.auth.token.email;
+    }
+
+    function isAnonymousUser() {
+      return request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    // Check if the current user has access to a project document
+    function isProjectAuthorized(projectData) {
+      return (
+        // Demo project flag allows demo / anonymous exploration
+        (projectData.isDemo == true && isAnonymousUser()) ||
+        // Owner UID matches
+        (projectData.ownerUid != null && projectData.ownerUid == currentUserUid()) ||
+        // UID in authorizedUserUids list
+        (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
+        // Email matches authorizedEmails list
+        (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
+      );
+    }
+
+    // Check project authorization via get() fetch
+    function canAccessParentProject(projectId) {
+      let parentProj = get(/databases/$(database)/documents/projects/$(projectId)).data;
+      return parentProj != null && isProjectAuthorized(parentProj);
+    }
+
+    // -------------------------------------------------------------
+    // Users Collection (Private per UID)
+    // -------------------------------------------------------------
     match /users/{userId} {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Projects: accessible if user is signed in
+    // -------------------------------------------------------------
+    // Projects Collection (Multi-Tenancy Enforced)
+    // -------------------------------------------------------------
     match /projects/{projectId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      // Read: Can only read if authorized for this specific project
+      allow read: if isAuthenticated() && isProjectAuthorized(resource.data);
 
-      // Sub-collections or associated data if stored as subcollections
-      match /{document=**} {
-        allow read, write: if isAuthenticated();
+      // Create: Signed-in user can create a project where they are set as ownerUid or authorizedUserUid
+      allow create: if isAuthenticated() && (
+        (isAnonymousUser() && request.resource.data.isDemo == true) ||
+        (!isAnonymousUser() && (
+          request.resource.data.ownerUid == currentUserUid() ||
+          (request.resource.data.authorizedUserUids != null && currentUserUid() in request.resource.data.authorizedUserUids)
+        ))
+      );
+
+      // Update: Only authorized members can update the project
+      allow update: if isAuthenticated() && isProjectAuthorized(resource.data);
+
+      // Delete: Only owner can delete the project
+      allow delete: if isAuthenticated() && (
+        resource.data.ownerUid == currentUserUid() ||
+        (resource.data.isDemo == true && isAnonymousUser())
+      );
+
+      // Nested sub-collections if any (inherit project authorization)
+      match /{allSubcollections=**} {
+        allow read, write: if isAuthenticated() && canAccessParentProject(projectId);
       }
     }
 
-    // Top-level ledger entries
+    // -------------------------------------------------------------
+    // Entries Collection (Linked to Project Multi-Tenancy)
+    // -------------------------------------------------------------
     match /entries/{entryId} {
-      allow read, write: if isAuthenticated();
+      // Read: Allowed only if user is authorized for the parent project
+      allow read: if isAuthenticated() && (
+        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+      );
+
+      // Create: Allowed only if user is authorized for the target project
+      allow create: if isAuthenticated() && (
+        request.resource.data.projectId != null && canAccessParentProject(request.resource.data.projectId)
+      );
+
+      // Update: Allowed only if user is authorized for the project
+      allow update: if isAuthenticated() && (
+        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+      );
+
+      // Delete: Allowed only if user is authorized for the project
+      allow delete: if isAuthenticated() && (
+        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+      );
     }
 
-    // Audit logs
+    // -------------------------------------------------------------
+    // Audit Logs Collection (Linked to Project Multi-Tenancy)
+    // -------------------------------------------------------------
     match /auditLogs/{logId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
+      );
+
+      allow create: if isAuthenticated() && (
+        request.resource.data.projectId != null && canAccessParentProject(request.resource.data.projectId)
+      );
+
+      // Audit logs are append-only; disallow update and delete for tampering prevention
+      allow update, delete: if false;
     }
   }
 }
