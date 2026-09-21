@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationTab } from '../types';
 import { 
   History, 
-  Wallet, 
+  Coins, 
   Plus, 
   CheckSquare, 
   Users
@@ -23,7 +23,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90">
       <div className="max-w-md mx-auto px-3 py-1 flex items-center justify-around">
         
-        {/* Khata / Timeline */}
+        {/* Ledger / Contributions */}
         <button
           id="nav-tab-timeline"
           onClick={() => onSelectTab('timeline')}
@@ -34,10 +34,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           }`}
         >
           <History className="w-5 h-5 stroke-[1.8]" />
-          <span className="text-[11px] mt-0.5">Khata (खाता)</span>
+          <span className="text-[11px] mt-0.5">Ledger</span>
         </button>
 
-        {/* Hisaab / Money */}
+        {/* Capital Pool / Investments */}
         <button
           id="nav-tab-money"
           onClick={() => onSelectTab('money')}
@@ -47,24 +47,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               : 'text-stone-500 hover:text-stone-800'
           }`}
         >
-          <Wallet className="w-5 h-5 stroke-[1.8]" />
-          <span className="text-[11px] mt-0.5">Hisaab (हिसाब)</span>
+          <Coins className="w-5 h-5 stroke-[1.8]" />
+          <span className="text-[11px] mt-0.5">Capital Pool</span>
         </button>
 
-        {/* Center Add Button */}
+        {/* Center Add / Record Contribution Button */}
         <div className="relative -top-2 flex flex-col items-center">
           <button
             id="nav-tab-add"
             onClick={() => onSelectTab('add')}
             className="w-12 h-12 rounded-full bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white flex items-center justify-center shadow-md border-2 border-white transition-all"
-            aria-label="Add new entry"
+            aria-label="Record partner contribution"
           >
             <Plus className="w-6 h-6 stroke-[2.5]" />
           </button>
-          <span className="text-[10px] text-stone-600 font-medium mt-0.5">Add</span>
+          <span className="text-[10px] text-stone-600 font-medium mt-0.5">Contribute</span>
         </div>
 
-        {/* Approvals */}
+        {/* Sign-offs / Approvals */}
         <button
           id="nav-tab-approvals"
           onClick={() => onSelectTab('approvals')}
@@ -82,10 +82,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               </span>
             )}
           </div>
-          <span className="text-[11px] mt-0.5">Approvals</span>
+          <span className="text-[11px] mt-0.5">Sign-offs</span>
         </button>
 
-        {/* Partners / More */}
+        {/* Partners */}
         <button
           id="nav-tab-more"
           onClick={() => onSelectTab('more')}

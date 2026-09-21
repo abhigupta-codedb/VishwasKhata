@@ -1,6 +1,6 @@
 {
   "name": "Partner Ledger",
-  "description": "Mobile-first shared source of truth for business partners to track capital, expenses, loans, decisions, approvals, and audit trails.",
+  "description": "Shared investment ledger for new business partnerships to track partner capital contributions and maintain mutually approved records during the pre-revenue setup phase.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

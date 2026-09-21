@@ -70,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-[11px] text-stone-500 flex items-center gap-1.5">
                 <span>{currentProject.partners.length} Partners</span>
                 <span className="text-stone-300">•</span>
-                <span className="font-semibold text-emerald-700">{currentProject.currency} INR</span>
+                <span className="font-semibold text-emerald-700">Setup Ledger</span>
               </div>
             </div>
           </button>

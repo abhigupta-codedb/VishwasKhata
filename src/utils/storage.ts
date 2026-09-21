@@ -133,12 +133,27 @@ export interface PartnerFinancialSummary {
   personalExpensesReimbursed: number;
   reimbursementPending: number;
   withdrawalsTaken: number;
-  totalCashInjected: number; // capital + loans + personal expenses
+  totalCashInjected: number; // total money introduced into venture
+  contributionShare: number; // % of total money introduced by this partner
+  equityDelta: number; // contributionShare - equityPercentage
+  contributionCount: number;
+  latestContributionDate: string | null;
   netReceivableFromProject: number; // pending reimbursement + net loans outstanding
+}
+
+export interface SetupPurposeItem {
+  category: string;
+  amount: number;
+  percentage: number;
+  count: number;
 }
 
 export interface ProjectFinancialSummary {
   availableFunds: number; // Project checking balance
+  totalInvested: number; // Total money introduced into the business venture
+  approvedInvested: number;
+  pendingInvested: number;
+  contributionsCount: number;
   totalCapitalContributed: number;
   totalLoansProvided: number;
   totalInflow: number; // capital + loans
@@ -150,8 +165,21 @@ export interface ProjectFinancialSummary {
   totalPendingReimbursements: number;
   pendingApprovalsValue: number;
   pendingApprovalsCount: number;
+  purposeBreakdown: SetupPurposeItem[];
   partnerSummaries: Record<string, PartnerFinancialSummary>;
 }
+
+export const SETUP_CATEGORIES = [
+  'Entity Incorporation & Legal',
+  'Equipment, Tools & Machinery',
+  'Workspace & Lease Deposit',
+  'Tech Stack, Domains & Software',
+  'Brand, Trademark & Design',
+  'Initial Inventory & Materials',
+  'Licenses, Permits & Compliance',
+  'Pre-Revenue Working Capital & Float',
+  'General Setup Requirement',
+] as const;
 
 export function calculateProjectFinancials(
   project: Project,
@@ -177,6 +205,10 @@ export function calculateProjectFinancials(
       reimbursementPending: 0,
       withdrawalsTaken: 0,
       totalCashInjected: 0,
+      contributionShare: 0,
+      equityDelta: 0,
+      contributionCount: 0,
+      latestContributionDate: null,
       netReceivableFromProject: 0,
     };
   });
@@ -189,14 +221,28 @@ export function calculateProjectFinancials(
   let totalWithdrawals = 0;
   let pendingApprovalsValue = 0;
   let pendingApprovalsCount = 0;
+  let totalInvested = 0;
+  let approvedInvested = 0;
+  let pendingInvested = 0;
+  let contributionsCount = 0;
+
+  const purposeTotals: Record<string, { amount: number; count: number }> = {};
 
   projectEntries.forEach(entry => {
     const amount = entry.amount || 0;
+    const isContributionType = ['capital_contribution', 'partner_loan', 'personal_expense'].includes(entry.type);
+
+    if (isContributionType) {
+      contributionsCount += 1;
+    }
 
     if (entry.status === 'pending') {
       pendingApprovalsCount += 1;
       if (amount > 0) {
         pendingApprovalsValue += amount;
+        if (isContributionType) {
+          pendingInvested += amount;
+        }
       }
       return;
     }
@@ -207,6 +253,30 @@ export function calculateProjectFinancials(
 
     const payer = entry.payerPartnerId;
     const recipient = entry.recipientPartnerId;
+
+    if (isContributionType && amount > 0) {
+      totalInvested += amount;
+      approvedInvested += amount;
+
+      // Track by purpose / category
+      const cat = entry.category || 'General Setup Requirement';
+      if (!purposeTotals[cat]) {
+        purposeTotals[cat] = { amount: 0, count: 0 };
+      }
+      purposeTotals[cat].amount += amount;
+      purposeTotals[cat].count += 1;
+
+      // Track partner contribution counts & dates
+      if (payer && partnerSummaries[payer]) {
+        partnerSummaries[payer].contributionCount += 1;
+        if (
+          !partnerSummaries[payer].latestContributionDate ||
+          new Date(entry.date) > new Date(partnerSummaries[payer].latestContributionDate!)
+        ) {
+          partnerSummaries[payer].latestContributionDate = entry.date;
+        }
+      }
+    }
 
     switch (entry.type) {
       case 'capital_contribution':
@@ -227,7 +297,7 @@ export function calculateProjectFinancials(
         break;
 
       case 'personal_expense':
-        // Partner paid out of pocket. Project owes them this money!
+        // Partner paid direct setup cost out of pocket
         totalPersonalExpensesApproved += amount;
         if (payer && partnerSummaries[payer]) {
           partnerSummaries[payer].personalExpensesPaid += amount;
@@ -265,9 +335,11 @@ export function calculateProjectFinancials(
     }
   });
 
-  // Calculate net receivables per partner
+  // Calculate net receivables, contribution share, and equity comparison per partner
   Object.values(partnerSummaries).forEach(ps => {
     ps.netReceivableFromProject = ps.reimbursementPending + ps.netLoanOutstanding;
+    ps.contributionShare = totalInvested > 0 ? (ps.totalCashInjected / totalInvested) * 100 : 0;
+    ps.equityDelta = ps.contributionShare - ps.equityPercentage;
   });
 
   const totalInflow = totalCapitalContributed + totalLoansProvided;
@@ -279,8 +351,22 @@ export function calculateProjectFinancials(
     totalPendingReimbursements += p.reimbursementPending;
   });
 
+  // Convert purposeTotals to sorted array
+  const purposeBreakdown: SetupPurposeItem[] = Object.entries(purposeTotals)
+    .map(([category, data]) => ({
+      category,
+      amount: data.amount,
+      percentage: totalInvested > 0 ? (data.amount / totalInvested) * 100 : 0,
+      count: data.count,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
   return {
     availableFunds,
+    totalInvested,
+    approvedInvested,
+    pendingInvested,
+    contributionsCount,
     totalCapitalContributed,
     totalLoansProvided,
     totalInflow,
@@ -292,6 +378,7 @@ export function calculateProjectFinancials(
     totalPendingReimbursements,
     pendingApprovalsValue,
     pendingApprovalsCount,
+    purposeBreakdown,
     partnerSummaries,
   };
 }
@@ -373,7 +460,7 @@ export function getEntryTypeMeta(type: EntryType): {
   switch (type) {
     case 'capital_contribution':
       return {
-        label: 'Partner Capital',
+        label: 'Core Equity Capital',
         shortLabel: 'Capital',
         badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
         badgeText: 'text-emerald-800',
@@ -383,8 +470,8 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'partner_loan':
       return {
-        label: 'Partner Loan',
-        shortLabel: 'Loan',
+        label: 'Founder Setup Advance',
+        shortLabel: 'Advance',
         badgeBg: 'bg-indigo-50 text-indigo-800 border-indigo-200',
         badgeText: 'text-indigo-800',
         iconColor: 'text-indigo-600',
@@ -393,18 +480,18 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'personal_expense':
       return {
-        label: 'Paid from Pocket',
-        shortLabel: 'Own Pocket',
+        label: 'Direct Setup Payment',
+        shortLabel: 'Direct Paid',
         badgeBg: 'bg-amber-50 text-amber-900 border-amber-200',
         badgeText: 'text-amber-900',
         iconColor: 'text-amber-600',
         isFinancial: true,
-        sign: 'neutral', // paid out of pocket, owed by project
+        sign: 'neutral', // paid out of pocket, owed by venture setup pool
       };
     case 'project_expense':
       return {
-        label: 'Company Expense',
-        shortLabel: 'Expense',
+        label: 'Pooled Setup Outlay',
+        shortLabel: 'Pooled Outlay',
         badgeBg: 'bg-rose-50 text-rose-800 border-rose-200',
         badgeText: 'text-rose-800',
         iconColor: 'text-rose-600',
@@ -413,8 +500,8 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'reimbursement':
       return {
-        label: 'Reimbursement',
-        shortLabel: 'Repaid',
+        label: 'Advance Settlement',
+        shortLabel: 'Settled',
         badgeBg: 'bg-teal-50 text-teal-800 border-teal-200',
         badgeText: 'text-teal-800',
         iconColor: 'text-teal-600',
@@ -423,7 +510,7 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'withdrawal':
       return {
-        label: 'Profit Draw',
+        label: 'Capital Return / Draw',
         shortLabel: 'Draw',
         badgeBg: 'bg-orange-50 text-orange-800 border-orange-200',
         badgeText: 'text-orange-800',
@@ -433,8 +520,8 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'decision':
       return {
-        label: 'Partner Vote',
-        shortLabel: 'Vote',
+        label: 'Partner Agreement / Vote',
+        shortLabel: 'Agreement',
         badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
         badgeText: 'text-purple-800',
         iconColor: 'text-purple-600',
@@ -443,11 +530,11 @@ export function getEntryTypeMeta(type: EntryType): {
       };
     case 'note':
       return {
-        label: 'Note / Memo',
-        shortLabel: 'Note',
-        badgeBg: 'bg-slate-100 text-slate-800 border-slate-200',
-        badgeText: 'text-slate-800',
-        iconColor: 'text-slate-600',
+        label: 'Setup Memo / Record',
+        shortLabel: 'Memo',
+        badgeBg: 'bg-stone-100 text-stone-800 border-stone-200',
+        badgeText: 'text-stone-800',
+        iconColor: 'text-stone-600',
         isFinancial: false,
         sign: 'neutral',
       };

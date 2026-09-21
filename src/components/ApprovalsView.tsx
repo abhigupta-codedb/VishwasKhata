@@ -82,9 +82,9 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({
       
       {/* Header */}
       <div>
-        <h2 className="text-base font-bold text-stone-900">Partner Approvals (सहमति)</h2>
+        <h2 className="text-base font-bold text-stone-900">Mutual Partner Sign-Offs (साझेदार सहमति)</h2>
         <p className="text-xs text-stone-500">
-          Sign-off on partner expenses, capital, and venture decisions
+          Verify and mutually approve money introduced into the business setup pool
         </p>
       </div>
 
@@ -273,14 +273,14 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({
                           className="flex-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-all"
                         >
                           <Check className="w-4 h-4 stroke-[2.5]" />
-                          <span>Approve (स्वीकारें)</span>
+                          <span>Sign Off & Verify (सहमति दें)</span>
                         </button>
                         <button
                           id={`quick-reject-btn-${entry.id}`}
                           onClick={() => setRejectingEntryId(entry.id)}
                           className="py-2 px-3 bg-stone-100 hover:bg-rose-50 hover:text-rose-700 text-stone-700 border border-stone-200 rounded-xl text-xs font-medium transition-colors"
                         >
-                          Reject
+                          Question
                         </button>
                       </div>
                     )}
