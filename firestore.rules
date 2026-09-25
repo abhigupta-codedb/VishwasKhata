@@ -17,8 +17,31 @@ service cloud.firestore {
       return request.auth.token.email;
     }
 
-    function isAnonymousUser() {
-      return request.auth.token.firebase.sign_in_provider == 'anonymous';
+    // Bootstrap administrator (User email from runtime metadata)
+    function isBootstrapAdmin() {
+      return isAuthenticated() && 
+        currentUserEmail() != null && 
+        currentUserEmail().lower() == 'mayank.abhishekgupta@gmail.com';
+    }
+
+    // Check if the current user is approved in the invite-only allowlist or is the bootstrap admin
+    function isAllowedUser() {
+      return isAuthenticated() && currentUserEmail() != null && (
+        isBootstrapAdmin() ||
+        exists(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower()))
+      );
+    }
+
+    // Check if user has administrator privileges to manage the allowlist
+    function isAdmin() {
+      return isAuthenticated() && (
+        isBootstrapAdmin() ||
+        (
+          currentUserEmail() != null &&
+          exists(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower())) &&
+          get(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower())).data.role == 'admin'
+        )
+      );
     }
 
     // Check if user is owner of the project document
@@ -29,17 +52,14 @@ service cloud.firestore {
     // Check if the current user has access to a project document
     function isProjectAuthorized(projectData) {
       return (
-        // Demo project flag allows demo / anonymous exploration only for demo data
-        (projectData.isDemo == true && isAnonymousUser()) ||
-        // Real authenticated user access
-        (!isAnonymousUser() && (
+        isAllowedUser() && (
           // Owner UID matches
           isProjectOwnerData(projectData) ||
           // UID in authorizedUserUids list
           (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
           // Email matches authorizedEmails list
-          (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
-        ))
+          (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail().lower() in projectData.authorizedEmails)
+        )
       );
     }
 
@@ -59,7 +79,7 @@ service cloud.firestore {
     function isClaimingAuthorizedEmail(prevData, nextData) {
       return currentUserEmail() != null &&
         prevData.authorizedEmails != null &&
-        currentUserEmail() in prevData.authorizedEmails &&
+        currentUserEmail().lower() in prevData.authorizedEmails &&
         nextData.ownerUid == prevData.ownerUid &&
         nextData.currency == prevData.currency &&
         nextData.defaultApprovalThreshold == prevData.defaultApprovalThreshold &&
@@ -67,31 +87,50 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Users Collection (Private per UID)
+    // Allowed Users Collection (Invite-Only Gatekeeper)
     // -------------------------------------------------------------
-    match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    match /allowed_users/{userEmail} {
+      // Individual user can verify their own allowlist entry during login check, or admin can read
+      allow get: if isAuthenticated() && (
+        (currentUserEmail() != null && currentUserEmail().lower() == userEmail.lower()) ||
+        isAdmin()
+      );
+
+      // List query: Only admin can view the entire allowlist
+      allow list: if isAdmin();
+
+      // Admin can add or edit approved users
+      allow create, update: if isAdmin() &&
+        request.resource.data.email is string &&
+        request.resource.data.email.size() >= 3 &&
+        request.resource.data.email.size() <= 150;
+
+      // Admin can remove approved users
+      allow delete: if isAdmin();
     }
 
     // -------------------------------------------------------------
-    // Projects Collection (Multi-Tenancy Enforced)
+    // Users Collection (Private per UID, Gated to Allowed Users)
+    // -------------------------------------------------------------
+    match /users/{userId} {
+      allow read, write: if isAllowedUser() && request.auth.uid == userId;
+    }
+
+    // -------------------------------------------------------------
+    // Projects Collection (Multi-Tenancy & Invite-Only Enforced)
     // -------------------------------------------------------------
     match /projects/{projectId} {
-      // Read: Can only read if authorized for this specific project
-      allow read: if isAuthenticated() && isProjectAuthorized(resource.data);
+      // Read: Can only read if allowed user and authorized for this specific project
+      allow read: if isAllowedUser() && isProjectAuthorized(resource.data);
 
-      // Create: Signed-in user can create a project where they are set as ownerUid
-      allow create: if isAuthenticated() && (
-        (isAnonymousUser() && request.resource.data.isDemo == true) ||
-        (!isAnonymousUser() && request.resource.data.ownerUid == currentUserUid())
-      );
+      // Create: Signed-in approved user can create a project where they are set as ownerUid
+      allow create: if isAllowedUser() && request.resource.data.ownerUid == currentUserUid();
 
       // Update:
       // Sensitive operations (partners, authorization lists, approval thresholds, currency) require OWNER permission,
       // EXCEPT when an invited partner claims their seat matching their authenticated email.
-      allow update: if isAuthenticated() && isProjectAuthorized(resource.data) && (
+      allow update: if isAllowedUser() && isProjectAuthorized(resource.data) && (
         isProjectOwnerData(resource.data) ||
-        (resource.data.isDemo == true && isAnonymousUser()) ||
         isClaimingAuthorizedEmail(resource.data, request.resource.data) ||
         // If sensitive governance fields change, caller MUST be the project owner
         (
@@ -105,14 +144,11 @@ service cloud.firestore {
       );
 
       // Delete: Only owner can delete the project
-      allow delete: if isAuthenticated() && (
-        isProjectOwnerData(resource.data) ||
-        (resource.data.isDemo == true && isAnonymousUser())
-      );
+      allow delete: if isAllowedUser() && isProjectOwnerData(resource.data);
 
       // Nested sub-collections if any (inherit project authorization)
       match /{allSubcollections=**} {
-        allow read, write: if isAuthenticated() && canAccessParentProject(projectId);
+        allow read, write: if isAllowedUser() && canAccessParentProject(projectId);
       }
     }
 
@@ -121,19 +157,19 @@ service cloud.firestore {
     // -------------------------------------------------------------
     match /entries/{entryId} {
       // Read: Allowed only if user is authorized for the parent project
-      allow read: if isAuthenticated() && (
+      allow read: if isAllowedUser() && (
         resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
       );
 
       // Create: Allowed only if user is authorized for target project and createdByUid matches
-      allow create: if isAuthenticated() && (
+      allow create: if isAllowedUser() && (
         request.resource.data.projectId != null &&
         canAccessParentProject(request.resource.data.projectId) &&
-        (isAnonymousUser() || request.resource.data.createdByUid == currentUserUid())
+        request.resource.data.createdByUid == currentUserUid()
       );
 
       // Update: Authorized members only, enforce immutability on approved entries
-      allow update: if isAuthenticated() && (
+      allow update: if isAllowedUser() && (
         resource.data.projectId != null &&
         canAccessParentProject(resource.data.projectId) &&
         request.resource.data.projectId == resource.data.projectId &&
@@ -156,11 +192,10 @@ service cloud.firestore {
       );
 
       // Delete: Only unapproved drafts or pending records can be deleted by creator or owner
-      allow delete: if isAuthenticated() && (
+      allow delete: if isAllowedUser() && (
         resource.data.status != 'approved' &&
         resource.data.projectId != null &&
         (
-          isAnonymousUser() ||
           resource.data.createdByUid == currentUserUid() ||
           isParentProjectOwner(resource.data.projectId)
         )
@@ -171,15 +206,15 @@ service cloud.firestore {
     // Audit Logs Collection (Append-Only, Project Scoped)
     // -------------------------------------------------------------
     match /auditLogs/{logId} {
-      allow read: if isAuthenticated() && (
+      allow read: if isAllowedUser() && (
         resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
       );
 
       // Create: Actor must be the authenticated user
-      allow create: if isAuthenticated() && (
+      allow create: if isAllowedUser() && (
         request.resource.data.projectId != null &&
         canAccessParentProject(request.resource.data.projectId) &&
-        (isAnonymousUser() || request.resource.data.actorUid == currentUserUid())
+        request.resource.data.actorUid == currentUserUid()
       );
 
       // Strictly append-only: no edits or deletions permitted

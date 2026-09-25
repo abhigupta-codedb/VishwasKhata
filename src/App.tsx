@@ -26,7 +26,10 @@ import {
   subscribeToProjectAuditLogs,
   saveProjectToFirestore,
   saveEntryToFirestore,
-  saveAuditLogToFirestore
+  saveAuditLogToFirestore,
+  checkIsUserAllowed,
+  isUserAdmin,
+  addAllowedUser
 } from './services/firestoreService';
 import { evaluateEntryStatus, getApprovalRequirement } from './utils/approvalPolicy';
 import { DEMO_PROJECTS, DEMO_ENTRIES, DEMO_AUDIT_LOG } from './data/demoData';
@@ -48,6 +51,7 @@ export default function App() {
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  const [blockedEmail, setBlockedEmail] = useState<string | null>(null);
 
   // Primary Data State (Starts empty, populated strictly by authorized Firestore queries)
   const [projects, setProjects] = useState<Project[]>([]);
@@ -71,13 +75,39 @@ export default function App() {
   } | undefined>(undefined);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
 
-  // Track Firebase Auth state
+  // Track Firebase Auth state with invite-only allowed_users verification
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setAuthUser(user);
       if (user) {
-        const isAnon = user.isAnonymous;
-        setIsDemoMode(isAnon);
+        // Disallow public anonymous signups
+        if (user.isAnonymous) {
+          await signOut(auth);
+          setAuthUser(null);
+          setCurrentUserProfile(null);
+          setIsDemoMode(false);
+          setAuthInitialized(true);
+          return;
+        }
+
+        // Verify that user's email exists in the allowed_users table
+        const email = user.email;
+        const isAllowed = await checkIsUserAllowed(email);
+
+        if (!isAllowed) {
+          // Block access and sign out
+          await signOut(auth);
+          setBlockedEmail(email || 'Unknown account');
+          setAuthUser(null);
+          setCurrentUserProfile(null);
+          setIsDemoMode(false);
+          setAuthInitialized(true);
+          return;
+        }
+
+        // Approved user: Clear any block and proceed
+        setBlockedEmail(null);
+        setAuthUser(user);
+        setIsDemoMode(false);
 
         const profile: UserProfile = {
           uid: user.uid,
@@ -89,11 +119,10 @@ export default function App() {
         setCurrentUserProfile(profile);
 
         // Save authenticated user profile and claim pending project email invites
-        if (!isAnon) {
-          await saveUserProfile(profile);
-          await linkPendingEmailInvitations(user.uid, user.email);
-        }
+        await saveUserProfile(profile);
+        await linkPendingEmailInvitations(user.uid, user.email);
       } else {
+        setAuthUser(null);
         setCurrentUserProfile(null);
         setIsDemoMode(false);
       }
@@ -629,6 +658,19 @@ export default function App() {
     if (!isDemoMode && authUser) {
       await saveProjectToFirestore(updatedProject);
       await saveAuditLogToFirestore(auditItem);
+      // Also pre-approve invited partner email in allowed_users table
+      if (newPartner.email) {
+        try {
+          await addAllowedUser(
+            newPartner.email,
+            `Invited by ${activePartner.name} for ${currentProject.name}`,
+            'partner',
+            authUser.email || undefined
+          );
+        } catch (e) {
+          console.warn('Auto-approving invited partner in allowed_users note:', e);
+        }
+      }
     }
   };
 
@@ -719,9 +761,14 @@ export default function App() {
     );
   }
 
-  // If user is not signed in and not in demo mode, display Login & Demo Screen
+  // If user is not signed in and not in demo mode, display Login & Gated Screen
   if (!authUser && !isDemoMode) {
-    return <AuthScreen onEnterDemo={() => setIsDemoMode(true)} />;
+    return (
+      <AuthScreen 
+        initialBlockedEmail={blockedEmail} 
+        onClearBlockedEmail={() => setBlockedEmail(null)} 
+      />
+    );
   }
 
   // If user is signed in with Google, but has no projects yet (clean tenant state)
@@ -830,6 +877,7 @@ export default function App() {
               auditLog={auditLog}
               currentUser={currentUserProfile}
               isProjectOwner={isProjectOwner}
+              isAdmin={isUserAdmin(authUser?.email)}
               isDemoMode={isDemoMode}
               onSelectPartner={handleSelectPartner}
               onSelectProject={handleSelectProject}

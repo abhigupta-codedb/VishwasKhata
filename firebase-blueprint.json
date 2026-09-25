@@ -64,9 +64,26 @@
         "isDemo": { "type": "boolean" }
       },
       "required": ["id", "projectId", "action", "timestamp", "summary"]
+    },
+    "allowed_users": {
+      "title": "Allowed Users",
+      "description": "Invite-only access allowlist containing approved user emails",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "addedAt": { "type": "string" },
+        "addedBy": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["email"]
     }
   },
   "firestore": {
+    "/allowed_users/{userEmail}": {
+      "schema": { "$ref": "#/entities/allowed_users" },
+      "description": "Approved user allowlist record for invite-only gating"
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/users" },
       "description": "Individual user document accessible only by the user"

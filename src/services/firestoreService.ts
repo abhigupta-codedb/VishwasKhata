@@ -2,6 +2,7 @@ import { db } from '../firebase';
 import { 
   collection, 
   doc, 
+  getDoc,
   getDocs, 
   setDoc, 
   deleteDoc, 
@@ -10,12 +11,15 @@ import {
   onSnapshot, 
   Unsubscribe 
 } from 'firebase/firestore';
-import { Project, LedgerEntry, AuditLogItem, UserProfile } from '../types';
+import { Project, LedgerEntry, AuditLogItem, UserProfile, AllowedUser } from '../types';
 
 const COLLECTION_PROJECTS = 'projects';
 const COLLECTION_ENTRIES = 'entries';
 const COLLECTION_AUDIT = 'auditLogs';
 const COLLECTION_USERS = 'users';
+const COLLECTION_ALLOWED_USERS = 'allowed_users';
+
+export const BOOTSTRAP_ADMIN_EMAIL = 'mayank.abhishekgupta@gmail.com';
 
 /**
  * Recursively strips any object keys where value is `undefined`.
@@ -335,3 +339,159 @@ export async function saveAuditLogToFirestore(log: AuditLogItem): Promise<void> 
   await setDoc(logRef, cleaned);
   console.log(`[Firestore] Audit log (${cleaned.id}) saved to Firestore.`);
 }
+
+/**
+ * Checks whether an email address exists in the `allowed_users` invite-only table.
+ * Also bootstraps the primary administrator record if required.
+ */
+export async function checkIsUserAllowed(email: string | null | undefined): Promise<boolean> {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+
+  // If bootstrap admin, grant access and ensure their document exists
+  if (normalized === BOOTSTRAP_ADMIN_EMAIL.toLowerCase()) {
+    try {
+      const adminDocRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
+      const snap = await getDoc(adminDocRef);
+      if (!snap.exists()) {
+        await setDoc(adminDocRef, cleanForFirestore({
+          email: normalized,
+          role: 'admin',
+          addedAt: new Date().toISOString(),
+          addedBy: 'system',
+          notes: 'Primary Administrator',
+        }));
+      }
+    } catch (e) {
+      console.warn('Bootstrap admin doc check/create note:', e);
+    }
+    return true;
+  }
+
+  try {
+    // 1. Direct document check by normalized email as docId
+    const docRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return true;
+    }
+
+    // 2. Query check in case admin inserted with auto-generated ID
+    const q = query(
+      collection(db, COLLECTION_ALLOWED_USERS),
+      where('email', '==', normalized)
+    );
+    const querySnap = await getDocs(q);
+    if (!querySnap.empty) {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn('Error checking allowed_users:', err);
+    return false;
+  }
+}
+
+/**
+ * Determines whether the given email has administrator privileges.
+ */
+export function isUserAdmin(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return email.trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase();
+}
+
+/**
+ * Fetches all approved emails from the `allowed_users` table for admin management.
+ */
+export async function fetchAllowedUsers(): Promise<AllowedUser[]> {
+  try {
+    const snap = await getDocs(collection(db, COLLECTION_ALLOWED_USERS));
+    const users: AllowedUser[] = [];
+    snap.forEach((d) => {
+      const data = d.data() as AllowedUser;
+      users.push({
+        email: data.email || d.id,
+        role: data.role || 'partner',
+        addedAt: data.addedAt || new Date().toISOString(),
+        addedBy: data.addedBy,
+        notes: data.notes,
+      });
+    });
+
+    // Ensure bootstrap admin is present in list
+    if (!users.some((u) => u.email.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase())) {
+      users.unshift({
+        email: BOOTSTRAP_ADMIN_EMAIL,
+        role: 'admin',
+        addedAt: new Date().toISOString(),
+        addedBy: 'system',
+        notes: 'Primary Administrator',
+      });
+    }
+
+    return users;
+  } catch (err) {
+    console.error('Error fetching allowed users:', err);
+    return [{
+      email: BOOTSTRAP_ADMIN_EMAIL,
+      role: 'admin',
+      addedAt: new Date().toISOString(),
+      notes: 'Primary Administrator',
+    }];
+  }
+}
+
+/**
+ * Adds an approved email to the `allowed_users` table.
+ */
+export async function addAllowedUser(
+  email: string,
+  notes?: string,
+  role: 'admin' | 'partner' = 'partner',
+  addedBy?: string
+): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized || !normalized.includes('@')) {
+    throw new Error('Please provide a valid email address.');
+  }
+
+  const docRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
+  const data: AllowedUser = {
+    email: normalized,
+    role,
+    addedAt: new Date().toISOString(),
+    addedBy: addedBy || 'admin',
+    notes: notes?.trim() || undefined,
+  };
+
+  await setDoc(docRef, cleanForFirestore(data));
+}
+
+/**
+ * Removes an approved email from the `allowed_users` table.
+ */
+export async function removeAllowedUser(email: string): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  if (normalized === BOOTSTRAP_ADMIN_EMAIL.toLowerCase()) {
+    throw new Error('Cannot remove primary administrator.');
+  }
+
+  const docRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
+  await deleteDoc(docRef);
+
+  // Also remove any auto-generated docs matching this email if any exist
+  try {
+    const q = query(
+      collection(db, COLLECTION_ALLOWED_USERS),
+      where('email', '==', normalized)
+    );
+    const querySnap = await getDocs(q);
+    for (const d of querySnap.docs) {
+      await deleteDoc(d.ref);
+    }
+  } catch (e) {
+    // Ignore cleanup query error
+  }
+}
+

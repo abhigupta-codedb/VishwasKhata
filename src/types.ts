@@ -134,3 +134,11 @@ export interface UserProfile {
   photoURL: string | null;
   lastLoginAt: string;
 }
+
+export interface AllowedUser {
+  email: string;
+  role?: 'admin' | 'partner';
+  addedAt: string;
+  addedBy?: string;
+  notes?: string;
+}

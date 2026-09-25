@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Project, Partner, AuditLogItem, UserProfile } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Project, Partner, AuditLogItem, UserProfile, AllowedUser } from '../types';
 import { formatDate, formatRelativeTime } from '../utils/storage';
 import { 
   Users, 
@@ -13,8 +13,21 @@ import {
   Check, 
   Copy, 
   Sliders,
-  LogOut
+  LogOut,
+  Lock,
+  Key,
+  Trash2,
+  PlusCircle,
+  CheckCircle2,
+  AlertCircle,
+  ShieldAlert
 } from 'lucide-react';
+import { 
+  fetchAllowedUsers, 
+  addAllowedUser, 
+  removeAllowedUser, 
+  BOOTSTRAP_ADMIN_EMAIL 
+} from '../services/firestoreService';
 
 interface MoreViewProps {
   project: Project;
@@ -23,6 +36,7 @@ interface MoreViewProps {
   auditLog: AuditLogItem[];
   currentUser: UserProfile | null;
   isProjectOwner?: boolean;
+  isAdmin?: boolean;
   isDemoMode?: boolean;
   onSelectPartner: (partnerId: string) => void;
   onSelectProject: (projectId: string) => void;
@@ -40,6 +54,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
   auditLog,
   currentUser,
   isProjectOwner = false,
+  isAdmin = false,
   isDemoMode = false,
   onSelectPartner,
   onSelectProject,
@@ -49,7 +64,70 @@ export const MoreView: React.FC<MoreViewProps> = ({
   onUpdateProjectSettings,
   onSignOut,
 }) => {
-  const [activeSection, setActiveSection] = useState<'partners' | 'audit' | 'projects' | 'settings'>('partners');
+  const [activeSection, setActiveSection] = useState<'partners' | 'access' | 'audit' | 'projects' | 'settings'>('partners');
+
+  // Allowed Users (invite-only table)
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>([]);
+  const [loadingAllowed, setLoadingAllowed] = useState(false);
+  const [newAllowedEmail, setNewAllowedEmail] = useState('');
+  const [newAllowedNotes, setNewAllowedNotes] = useState('');
+  const [allowedMsg, setAllowedMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (activeSection === 'access') {
+      loadAllowed();
+    }
+  }, [activeSection]);
+
+  const loadAllowed = async () => {
+    setLoadingAllowed(true);
+    setAllowedMsg(null);
+    try {
+      const list = await fetchAllowedUsers();
+      setAllowedUsers(list);
+    } catch (err: any) {
+      setAllowedMsg({ type: 'error', text: err.message || 'Failed to load allowed users table.' });
+    } finally {
+      setLoadingAllowed(false);
+    }
+  };
+
+  const handleAddAllowedUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = newAllowedEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAllowedMsg({ type: 'error', text: 'Please provide a valid email address.' });
+      return;
+    }
+
+    try {
+      await addAllowedUser(cleanEmail, newAllowedNotes.trim() || undefined, 'partner', currentUser?.email || undefined);
+      setNewAllowedEmail('');
+      setNewAllowedNotes('');
+      setAllowedMsg({ type: 'success', text: `Pre-approved ${cleanEmail} successfully!` });
+      await loadAllowed();
+    } catch (err: any) {
+      setAllowedMsg({ type: 'error', text: err.message || 'Failed to add approved user.' });
+    }
+  };
+
+  const handleRemoveAllowedUser = async (emailToRemove: string) => {
+    if (emailToRemove.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase()) {
+      alert('Cannot remove the primary administrator.');
+      return;
+    }
+    if (!confirm(`Are you sure you want to revoke login access for ${emailToRemove}?`)) {
+      return;
+    }
+
+    try {
+      await removeAllowedUser(emailToRemove);
+      setAllowedMsg({ type: 'success', text: `Removed access for ${emailToRemove}.` });
+      await loadAllowed();
+    } catch (err: any) {
+      setAllowedMsg({ type: 'error', text: err.message || 'Failed to remove user.' });
+    }
+  };
 
   // Invite partner
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -202,26 +280,35 @@ export const MoreView: React.FC<MoreViewProps> = ({
       )}
 
       {/* Minimal Sub-Navigation Tabs */}
-      <div className="flex bg-stone-200/70 p-1 rounded-xl text-xs font-semibold text-stone-600">
+      <div className="flex bg-stone-200/70 p-1 rounded-xl text-xs font-semibold text-stone-600 gap-0.5">
         <button
           onClick={() => setActiveSection('partners')}
-          className={`flex-1 py-1.5 rounded-lg transition-all ${
+          className={`flex-1 py-1.5 px-1 rounded-lg transition-all text-center ${
             activeSection === 'partners' ? 'bg-white text-stone-900 shadow-2xs' : 'hover:text-stone-900'
           }`}
         >
-          Partners ({project.partners.length})
+          Partners
+        </button>
+        <button
+          onClick={() => setActiveSection('access')}
+          className={`flex-1 py-1.5 px-1 rounded-lg transition-all text-center flex items-center justify-center gap-1 ${
+            activeSection === 'access' ? 'bg-white text-stone-900 shadow-2xs' : 'hover:text-stone-900'
+          }`}
+        >
+          <Lock className="w-3 h-3 text-emerald-600" />
+          <span>Invite Table</span>
         </button>
         <button
           onClick={() => setActiveSection('audit')}
-          className={`flex-1 py-1.5 rounded-lg transition-all ${
+          className={`flex-1 py-1.5 px-1 rounded-lg transition-all text-center ${
             activeSection === 'audit' ? 'bg-white text-stone-900 shadow-2xs' : 'hover:text-stone-900'
           }`}
         >
-          Audit Log
+          Audit
         </button>
         <button
           onClick={() => setActiveSection('projects')}
-          className={`flex-1 py-1.5 rounded-lg transition-all ${
+          className={`flex-1 py-1.5 px-1 rounded-lg transition-all text-center ${
             activeSection === 'projects' ? 'bg-white text-stone-900 shadow-2xs' : 'hover:text-stone-900'
           }`}
         >
@@ -229,13 +316,182 @@ export const MoreView: React.FC<MoreViewProps> = ({
         </button>
         <button
           onClick={() => setActiveSection('settings')}
-          className={`flex-1 py-1.5 rounded-lg transition-all ${
+          className={`flex-1 py-1.5 px-1 rounded-lg transition-all text-center ${
             activeSection === 'settings' ? 'bg-white text-stone-900 shadow-2xs' : 'hover:text-stone-900'
           }`}
         >
           Settings
         </button>
       </div>
+
+      {/* SECTION: INVITE-ONLY ACCESS TABLE (allowed_users) */}
+      {activeSection === 'access' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          
+          {/* Header Card */}
+          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-stone-900 font-bold text-xs">
+                <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                  <Key className="w-3.5 h-3.5" />
+                </div>
+                <span>Approved Users Table (`allowed_users`)</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Gated Pilot
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-500 leading-relaxed">
+              This app is strictly invite-only. Only email addresses present in the Firestore <code className="bg-stone-200 px-1 py-0.5 rounded text-stone-800">allowed_users</code> collection can sign up and log in. Unlisted emails are automatically blocked.
+            </p>
+          </div>
+
+          {/* Feedback Message */}
+          {allowedMsg && (
+            <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+              allowedMsg.type === 'success' 
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                : 'bg-rose-50 text-rose-800 border border-rose-200'
+            }`}>
+              {allowedMsg.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              )}
+              <span>{allowedMsg.text}</span>
+            </div>
+          )}
+
+          {/* Add Approved Email Form */}
+          <div className="bg-white border border-stone-200 rounded-2xl p-4 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-stone-800 text-xs">Pre-Approve New Email</span>
+              <span className="text-[10px] text-stone-400">Admin Control</span>
+            </div>
+
+            <form onSubmit={handleAddAllowedUser} className="space-y-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                  Google Account Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. partner@example.com"
+                  value={newAllowedEmail}
+                  onChange={(e) => setNewAllowedEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                  Notes / Role (optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Co-founder / Angel Investor"
+                  value={newAllowedNotes}
+                  onChange={(e) => setNewAllowedNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-xs"
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Add to Approved Users Table</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Allowed Users List */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="font-bold text-stone-600 text-[11px] uppercase tracking-wider">
+                Approved Emails ({allowedUsers.length})
+              </span>
+              <button
+                onClick={loadAllowed}
+                disabled={loadingAllowed}
+                className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold"
+              >
+                {loadingAllowed ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+
+            {loadingAllowed && allowedUsers.length === 0 ? (
+              <div className="p-4 text-center text-xs text-stone-400 bg-stone-50 rounded-xl border border-stone-200">
+                Loading approved users...
+              </div>
+            ) : allowedUsers.length === 0 ? (
+              <div className="p-4 text-center text-xs text-stone-500 bg-stone-50 rounded-xl border border-stone-200">
+                No approved users loaded.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {allowedUsers.map((u) => {
+                  const isBootstrap = u.email.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase();
+                  return (
+                    <div
+                      key={u.email}
+                      className="p-3 bg-white border border-stone-200 rounded-xl flex items-center justify-between shadow-2xs gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-stone-900 truncate">
+                            {u.email}
+                          </span>
+                          {isBootstrap ? (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded-md font-bold flex-shrink-0">
+                              Primary Admin
+                            </span>
+                          ) : u.role === 'admin' ? (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-blue-100 text-blue-800 rounded-md font-semibold flex-shrink-0">
+                              Admin
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-md font-semibold flex-shrink-0">
+                              Approved Partner
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-stone-400 mt-0.5 truncate">
+                          {u.notes ? `${u.notes} • ` : ''}Added {formatDate(u.addedAt || new Date().toISOString())}
+                        </div>
+                      </div>
+
+                      {!isBootstrap && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAllowedUser(u.email)}
+                          title="Revoke access"
+                          className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Direct Firestore Management Tip */}
+          <div className="p-3 bg-stone-100 border border-stone-200 rounded-xl text-[11px] text-stone-600 space-y-1">
+            <span className="font-semibold text-stone-800 block">Firebase Console Direct Access:</span>
+            <p className="leading-normal">
+              You can also add or delete emails directly in the Firestore database under collection:
+              <br />
+              <code className="font-mono text-emerald-900 font-semibold">allowed_users/{`{email_lowercase}`}</code>
+            </p>
+          </div>
+
+        </div>
+      )}
 
       {/* SECTION 1: PARTNERS */}
       {activeSection === 'partners' && (
