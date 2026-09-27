@@ -13,38 +13,35 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
+    // Always returns lowercased email string, or '' if not authenticated / missing
     function currentUserEmail() {
-      return request.auth.token.email;
+      return (request.auth != null && 'email' in request.auth.token && request.auth.token.email != null)
+        ? request.auth.token.email.lower()
+        : '';
     }
 
     // Safe document existence checker without methods inside path interpolation
     function checkAllowedDoc(emailStr) {
-      return exists(/databases/$(database)/documents/allowed_users/$(emailStr));
+      return emailStr != '' && exists(/databases/$(database)/documents/allowed_users/$(emailStr));
     }
 
     // Safe admin role checker without methods inside path interpolation
     function checkAdminDoc(emailStr) {
-      return exists(/databases/$(database)/documents/allowed_users/$(emailStr)) &&
+      return emailStr != '' &&
+        exists(/databases/$(database)/documents/allowed_users/$(emailStr)) &&
         get(/databases/$(database)/documents/allowed_users/$(emailStr)).data.get('role', '') == 'admin';
     }
 
     // Bootstrap administrator (User email from runtime metadata)
     function isBootstrapAdmin() {
-      return isAuthenticated() && 
-        currentUserEmail() != null && 
-        (
-          currentUserEmail() == 'mayank.abhishekgupta@gmail.com' ||
-          currentUserEmail() == 'Mayank.abhishekgupta@gmail.com' ||
-          currentUserEmail().matches('(?i)^mayank\\.abhishekgupta@gmail\\.com$')
-        );
+      return isAuthenticated() && currentUserEmail() == 'mayank.abhishekgupta@gmail.com';
     }
 
     // Check if the current user is approved in the invite-only allowlist or is the bootstrap admin
     function isAllowedUser() {
-      return isAuthenticated() && currentUserEmail() != null && (
+      return isAuthenticated() && (
         isBootstrapAdmin() ||
-        checkAllowedDoc(currentUserEmail()) ||
-        checkAllowedDoc(currentUserEmail().lower())
+        checkAllowedDoc(currentUserEmail())
       );
     }
 
@@ -52,12 +49,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
-        (
-          currentUserEmail() != null && (
-            checkAdminDoc(currentUserEmail()) ||
-            checkAdminDoc(currentUserEmail().lower())
-          )
-        )
+        checkAdminDoc(currentUserEmail())
       );
     }
 
@@ -75,7 +67,7 @@ service cloud.firestore {
           // UID in authorizedUserUids list
           (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
           // Email matches authorizedEmails list
-          (currentUserEmail() != null && projectData.authorizedEmails != null && currentUserEmail().lower() in projectData.authorizedEmails)
+          (currentUserEmail() != '' && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
         )
       );
     }
@@ -94,9 +86,9 @@ service cloud.firestore {
 
     // Check if an invited partner is linking their own authenticated UID to their authorized email seat
     function isClaimingAuthorizedEmail(prevData, nextData) {
-      return currentUserEmail() != null &&
+      return currentUserEmail() != '' &&
         prevData.authorizedEmails != null &&
-        currentUserEmail().lower() in prevData.authorizedEmails &&
+        currentUserEmail() in prevData.authorizedEmails &&
         nextData.ownerUid == prevData.ownerUid &&
         nextData.currency == prevData.currency &&
         nextData.defaultApprovalThreshold == prevData.defaultApprovalThreshold &&
@@ -110,13 +102,7 @@ service cloud.firestore {
       // Individual user can verify their own allowlist entry during login check, or admin can read
       allow get: if isAuthenticated() && (
         isAdmin() ||
-        (
-          currentUserEmail() != null && (
-            currentUserEmail() == userEmail ||
-            currentUserEmail().lower() == userEmail.lower() ||
-            currentUserEmail().matches('(?i)^' + userEmail + '$')
-          )
-        )
+        currentUserEmail() == userEmail.lower()
       );
 
       // List query: Only admin can view the entire allowlist

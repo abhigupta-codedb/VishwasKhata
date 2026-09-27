@@ -369,20 +369,10 @@ export async function checkIsUserAllowed(email: string | null | undefined): Prom
   }
 
   try {
-    // 1. Direct document check by normalized email as docId
+    // 1. Direct document check by normalized email as docId (fast & allowed per-user get rule)
     const docRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return true;
-    }
-
-    // 2. Query check in case admin inserted with auto-generated ID
-    const q = query(
-      collection(db, COLLECTION_ALLOWED_USERS),
-      where('email', '==', normalized)
-    );
-    const querySnap = await getDocs(q);
-    if (!querySnap.empty) {
       return true;
     }
 
