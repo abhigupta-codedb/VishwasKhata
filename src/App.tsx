@@ -29,6 +29,7 @@ import {
   saveAuditLogToFirestore,
   checkIsUserAllowed,
   isUserAdmin,
+  checkUserRole,
   addAllowedUser
 } from './services/firestoreService';
 import { evaluateEntryStatus, getApprovalRequirement } from './utils/approvalPolicy';
@@ -49,6 +50,7 @@ export default function App() {
   // Authentication & Demo state
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'partner'>('partner');
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
   const [blockedEmail, setBlockedEmail] = useState<string | null>(null);
@@ -117,6 +119,10 @@ export default function App() {
           lastLoginAt: new Date().toISOString(),
         };
         setCurrentUserProfile(profile);
+
+        // Fetch user role (admin or partner)
+        const role = await checkUserRole(user.email);
+        setUserRole(role);
 
         // Save authenticated user profile and claim pending project email invites
         await saveUserProfile(profile);
@@ -877,7 +883,7 @@ export default function App() {
               auditLog={auditLog}
               currentUser={currentUserProfile}
               isProjectOwner={isProjectOwner}
-              isAdmin={isUserAdmin(authUser?.email)}
+              isAdmin={isUserAdmin(authUser?.email) || userRole === 'admin'}
               isDemoMode={isDemoMode}
               onSelectPartner={handleSelectPartner}
               onSelectProject={handleSelectProject}

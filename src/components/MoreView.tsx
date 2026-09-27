@@ -71,6 +71,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
   const [loadingAllowed, setLoadingAllowed] = useState(false);
   const [newAllowedEmail, setNewAllowedEmail] = useState('');
   const [newAllowedNotes, setNewAllowedNotes] = useState('');
+  const [newAllowedRole, setNewAllowedRole] = useState<'partner' | 'admin'>('partner');
   const [allowedMsg, setAllowedMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -101,13 +102,14 @@ export const MoreView: React.FC<MoreViewProps> = ({
     }
 
     try {
-      await addAllowedUser(cleanEmail, newAllowedNotes.trim() || undefined, 'partner', currentUser?.email || undefined);
+      await addAllowedUser(cleanEmail, newAllowedNotes.trim() || undefined, newAllowedRole, currentUser?.email || undefined);
       setNewAllowedEmail('');
       setNewAllowedNotes('');
-      setAllowedMsg({ type: 'success', text: `Pre-approved ${cleanEmail} successfully!` });
+      setAllowedMsg({ type: 'success', text: `Pre-approved ${cleanEmail} (${newAllowedRole}) successfully!` });
       await loadAllowed();
     } catch (err: any) {
-      setAllowedMsg({ type: 'error', text: err.message || 'Failed to add approved user.' });
+      console.error('Error adding user:', err);
+      setAllowedMsg({ type: 'error', text: err.message || 'Failed to add approved user. Ensure you are signed in with administrator permissions.' });
     }
   };
 
@@ -362,50 +364,99 @@ export const MoreView: React.FC<MoreViewProps> = ({
             </div>
           )}
 
-          {/* Add Approved Email Form */}
-          <div className="bg-white border border-stone-200 rounded-2xl p-4 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-stone-800 text-xs">Pre-Approve New Email</span>
-              <span className="text-[10px] text-stone-400">Admin Control</span>
+          {/* Identity & Admin Status Banner */}
+          <div className="bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1 truncate">
+              <span className="text-stone-500 text-[11px]">Logged in as: </span>
+              <span className="font-mono font-semibold text-stone-900 text-[11px] truncate">
+                {currentUser?.email || activePartner.email || 'Authenticated User'}
+              </span>
             </div>
-
-            <form onSubmit={handleAddAllowedUser} className="space-y-2.5">
-              <div>
-                <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                  Google Account Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. partner@example.com"
-                  value={newAllowedEmail}
-                  onChange={(e) => setNewAllowedEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                  Notes / Role (optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Co-founder / Angel Investor"
-                  value={newAllowedNotes}
-                  onChange={(e) => setNewAllowedNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-xs"
-              >
-                <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Add to Approved Users Table</span>
-              </button>
-            </form>
+            {isAdmin ? (
+              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-2 py-0.5 rounded-full text-[10px] flex-shrink-0">
+                Admin Access
+              </span>
+            ) : (
+              <span className="bg-stone-200 text-stone-700 font-medium px-2 py-0.5 rounded-full text-[10px] flex-shrink-0">
+                Partner (Read-Only)
+              </span>
+            )}
           </div>
+
+          {/* Add Approved Email Form (Admin Only) */}
+          {isAdmin ? (
+            <div className="bg-white border border-stone-200 rounded-2xl p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-stone-800 text-xs">Pre-Approve New Email</span>
+                <span className="text-[10px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Admin Action
+                </span>
+              </div>
+
+              <form onSubmit={handleAddAllowedUser} className="space-y-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                    Google Account Email
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. partner@example.com"
+                    value={newAllowedEmail}
+                    onChange={(e) => setNewAllowedEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                      Assigned Role
+                    </label>
+                    <select
+                      value={newAllowedRole}
+                      onChange={(e) => setNewAllowedRole(e.target.value as 'partner' | 'admin')}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                    >
+                      <option value="partner">Partner (Standard)</option>
+                      <option value="admin">Admin (Manage Users)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                      Notes (optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Co-founder"
+                      value={newAllowedNotes}
+                      onChange={(e) => setNewAllowedNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-xs"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Add to Approved Users Table</span>
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs space-y-1.5">
+              <div className="flex items-center gap-2 font-bold text-amber-900">
+                <ShieldAlert className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                <span>Admin Privileges Required</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Only designated administrators can add new approved users or revoke permissions. If a new partner needs access, please contact the primary administrator (<span className="font-mono font-medium">{BOOTSTRAP_ADMIN_EMAIL}</span>).
+              </p>
+            </div>
+          )}
 
           {/* Allowed Users List */}
           <div className="space-y-2">
@@ -463,7 +514,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
                         </div>
                       </div>
 
-                      {!isBootstrap && (
+                      {isAdmin && !isBootstrap && (
                         <button
                           type="button"
                           onClick={() => handleRemoveAllowedUser(u.email)}

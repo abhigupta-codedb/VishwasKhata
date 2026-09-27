@@ -394,11 +394,35 @@ export async function checkIsUserAllowed(email: string | null | undefined): Prom
 }
 
 /**
- * Determines whether the given email has administrator privileges.
+ * Determines whether the given email has administrator privileges synchronously.
  */
 export function isUserAdmin(email: string | null | undefined): boolean {
   if (!email) return false;
   return email.trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase();
+}
+
+/**
+ * Checks whether an email has admin privileges by checking bootstrap list or database role.
+ */
+export async function checkUserRole(email: string | null | undefined): Promise<'admin' | 'partner'> {
+  if (!email) return 'partner';
+  const normalized = email.trim().toLowerCase();
+  if (normalized === BOOTSTRAP_ADMIN_EMAIL.toLowerCase()) {
+    return 'admin';
+  }
+  try {
+    const docRef = doc(db, COLLECTION_ALLOWED_USERS, normalized);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && data.role === 'admin') {
+        return 'admin';
+      }
+    }
+  } catch (err) {
+    console.warn('Error checking user role in database:', err);
+  }
+  return 'partner';
 }
 
 /**

@@ -17,18 +17,34 @@ service cloud.firestore {
       return request.auth.token.email;
     }
 
+    // Safe document existence checker without methods inside path interpolation
+    function checkAllowedDoc(emailStr) {
+      return exists(/databases/$(database)/documents/allowed_users/$(emailStr));
+    }
+
+    // Safe admin role checker without methods inside path interpolation
+    function checkAdminDoc(emailStr) {
+      return exists(/databases/$(database)/documents/allowed_users/$(emailStr)) &&
+        get(/databases/$(database)/documents/allowed_users/$(emailStr)).data.get('role', '') == 'admin';
+    }
+
     // Bootstrap administrator (User email from runtime metadata)
     function isBootstrapAdmin() {
       return isAuthenticated() && 
         currentUserEmail() != null && 
-        currentUserEmail().lower() == 'mayank.abhishekgupta@gmail.com';
+        (
+          currentUserEmail() == 'mayank.abhishekgupta@gmail.com' ||
+          currentUserEmail() == 'Mayank.abhishekgupta@gmail.com' ||
+          currentUserEmail().matches('(?i)^mayank\\.abhishekgupta@gmail\\.com$')
+        );
     }
 
     // Check if the current user is approved in the invite-only allowlist or is the bootstrap admin
     function isAllowedUser() {
       return isAuthenticated() && currentUserEmail() != null && (
         isBootstrapAdmin() ||
-        exists(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower()))
+        checkAllowedDoc(currentUserEmail()) ||
+        checkAllowedDoc(currentUserEmail().lower())
       );
     }
 
@@ -37,9 +53,10 @@ service cloud.firestore {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
         (
-          currentUserEmail() != null &&
-          exists(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower())) &&
-          get(/databases/$(database)/documents/allowed_users/$(currentUserEmail().lower())).data.role == 'admin'
+          currentUserEmail() != null && (
+            checkAdminDoc(currentUserEmail()) ||
+            checkAdminDoc(currentUserEmail().lower())
+          )
         )
       );
     }
@@ -92,8 +109,14 @@ service cloud.firestore {
     match /allowed_users/{userEmail} {
       // Individual user can verify their own allowlist entry during login check, or admin can read
       allow get: if isAuthenticated() && (
-        (currentUserEmail() != null && currentUserEmail().lower() == userEmail.lower()) ||
-        isAdmin()
+        isAdmin() ||
+        (
+          currentUserEmail() != null && (
+            currentUserEmail() == userEmail ||
+            currentUserEmail().lower() == userEmail.lower() ||
+            currentUserEmail().matches('(?i)^' + userEmail + '$')
+          )
+        )
       );
 
       // List query: Only admin can view the entire allowlist
