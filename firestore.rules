@@ -13,7 +13,7 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
-    // Helper to safely get the current authenticated user email in lowercase
+    // Safely get the lowercased email from auth token
     function currentUserEmail() {
       return (isAuthenticated() && request.auth.token.email != null)
         ? request.auth.token.email.lower()
@@ -29,23 +29,24 @@ service cloud.firestore {
       );
     }
 
-    // Safe document existence checker without methods inside path interpolation
-    function checkAllowedDoc(emailStr) {
-      return emailStr != '' && exists(/databases/$(database)/documents/allowed_users/$(emailStr));
+    // Safe document existence checker in allowed_users
+    function checkAllowedDoc(emailOrUid) {
+      return emailOrUid != '' && exists(/databases/$(database)/documents/allowed_users/$(emailOrUid));
     }
 
-    // Safe admin role checker without methods inside path interpolation
-    function checkAdminDoc(emailStr) {
-      return emailStr != '' &&
-        exists(/databases/$(database)/documents/allowed_users/$(emailStr)) &&
-        get(/databases/$(database)/documents/allowed_users/$(emailStr)).data.get('role', '') == 'admin';
+    // Safe admin role checker in allowed_users
+    function checkAdminDoc(emailOrUid) {
+      return emailOrUid != '' &&
+        exists(/databases/$(database)/documents/allowed_users/$(emailOrUid)) &&
+        get(/databases/$(database)/documents/allowed_users/$(emailOrUid)).data.get('role', '') == 'admin';
     }
 
-    // Check if the current user is approved in the invite-only allowlist or is the bootstrap admin
+    // 1. ALLOWLIST ENFORCEMENT: Check if the user is approved in allowed_users or is bootstrap admin
     function isAllowedUser() {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
-        checkAllowedDoc(currentUserEmail())
+        checkAllowedDoc(currentUserEmail()) ||
+        checkAllowedDoc(currentUserUid())
       );
     }
 
@@ -53,39 +54,42 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
-        checkAdminDoc(currentUserEmail())
+        checkAdminDoc(currentUserEmail()) ||
+        checkAdminDoc(currentUserUid())
       );
     }
 
     // Check if user is owner of the project document
     function isProjectOwnerData(projectData) {
-      return projectData.ownerUid != null && projectData.ownerUid == currentUserUid();
+      return projectData != null && projectData.ownerUid != null && projectData.ownerUid == currentUserUid();
     }
 
-    // Check if the current user has access to a project document
-    function isProjectAuthorized(projectData) {
-      return (
-        isAllowedUser() && (
-          // Owner UID matches
-          isProjectOwnerData(projectData) ||
-          // UID in authorizedUserUids list
-          (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
-          // Email matches authorizedEmails list
-          (currentUserEmail() != '' && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
-        )
+    // Check if the given project document grants membership to the current user
+    function isProjectMemberData(projectData) {
+      return isAllowedUser() && projectData != null && (
+        // Owner UID matches
+        isProjectOwnerData(projectData) ||
+        // UID in authorizedUserUids list
+        (projectData.authorizedUserUids != null && currentUserUid() in projectData.authorizedUserUids) ||
+        // Email matches authorizedEmails list
+        (currentUserEmail() != '' && projectData.authorizedEmails != null && currentUserEmail() in projectData.authorizedEmails)
       );
     }
 
-    // Check project authorization via get() fetch
-    function canAccessParentProject(projectId) {
-      let parentProj = get(/databases/$(database)/documents/projects/$(projectId)).data;
-      return parentProj != null && isProjectAuthorized(parentProj);
+    // 2. PROJECT-LEVEL ISOLATION: Reusable helper isProjectMember(projectId)
+    function isProjectMember(projectId) {
+      return isAllowedUser() &&
+        projectId != null &&
+        exists(/databases/$(database)/documents/projects/$(projectId)) &&
+        isProjectMemberData(get(/databases/$(database)/documents/projects/$(projectId)).data);
     }
 
-    // Check if user is project owner via get() fetch
-    function isParentProjectOwner(projectId) {
-      let parentProj = get(/databases/$(database)/documents/projects/$(projectId)).data;
-      return parentProj != null && isProjectOwnerData(parentProj);
+    // Check if user is project owner by projectId
+    function isProjectOwner(projectId) {
+      return isAllowedUser() &&
+        projectId != null &&
+        exists(/databases/$(database)/documents/projects/$(projectId)) &&
+        isProjectOwnerData(get(/databases/$(database)/documents/projects/$(projectId)).data);
     }
 
     // Check if an invited partner is linking their own authenticated UID to their authorized email seat
@@ -106,15 +110,13 @@ service cloud.firestore {
       // Individual user can verify their own allowlist entry during login check, or admin can read
       allow get: if isAuthenticated() && (
         isBootstrapAdmin() ||
-        (request.auth.token.email != null && (
-          request.auth.token.email == userEmail ||
-          request.auth.token.email.lower() == userEmail.lower()
-        )) ||
-        isAdmin()
+        isAdmin() ||
+        (currentUserEmail() != '' && currentUserEmail() == userEmail.lower()) ||
+        currentUserUid() == userEmail
       );
 
-      // List query: Bootstrap admin or any admin can view the entire allowlist
-      allow list: if isBootstrapAdmin() || isAdmin();
+      // List query: Only admin can view the entire allowlist
+      allow list: if isAdmin();
 
       // Bootstrap admin or any admin can add or edit approved users
       allow create, update: if (isBootstrapAdmin() || isAdmin()) &&
@@ -134,19 +136,19 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // Projects Collection (Multi-Tenancy & Invite-Only Enforced)
+    // Projects Collection (Multi-Tenancy & Project-Level Isolation)
     // -------------------------------------------------------------
     match /projects/{projectId} {
-      // Read: Can only read if allowed user and authorized for this specific project
-      allow read: if isAllowedUser() && isProjectAuthorized(resource.data);
+      // Read: Can only read if allowed user and registered member of this project
+      allow get: if isAllowedUser() && isProjectMemberData(resource.data);
+      allow list: if isAllowedUser() && isProjectMemberData(resource.data);
 
-      // Create: Signed-in approved user can create a project where they are set as ownerUid
-      allow create: if isAllowedUser() && request.resource.data.ownerUid == currentUserUid();
+      // Create: Signed-in allowed user can create a project where they are set as ownerUid
+      allow create: if isAllowedUser() &&
+        request.resource.data.ownerUid == currentUserUid();
 
-      // Update:
-      // Sensitive operations (partners, authorization lists, approval thresholds, currency) require OWNER permission,
-      // EXCEPT when an invited partner claims their seat matching their authenticated email.
-      allow update: if isAllowedUser() && isProjectAuthorized(resource.data) && (
+      // Update: Registered member only
+      allow update: if isAllowedUser() && isProjectMemberData(resource.data) && (
         isProjectOwnerData(resource.data) ||
         isClaimingAuthorizedEmail(resource.data, request.resource.data) ||
         // If sensitive governance fields change, caller MUST be the project owner
@@ -160,44 +162,42 @@ service cloud.firestore {
         )
       );
 
-      // Delete: Only owner can delete the project
+      // Delete: Only project owner can delete
       allow delete: if isAllowedUser() && isProjectOwnerData(resource.data);
 
-      // Nested sub-collections if any (inherit project authorization)
+      // Subcollections (members, entries, approvals, comments, attachments, amendments, notifications)
       match /{allSubcollections=**} {
-        allow read, write: if isAllowedUser() && canAccessParentProject(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
     }
 
     // -------------------------------------------------------------
-    // Entries Collection (Linked to Project Multi-Tenancy & Immutability)
+    // Entries Collection (Top-Level, Project-Scoped Isolation)
     // -------------------------------------------------------------
     match /entries/{entryId} {
-      // Read: Allowed only if user is authorized for the parent project
-      allow read: if isAllowedUser() && (
-        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
-      );
+      // Read: Allowed only if user is an authorized member of the parent project
+      allow read: if resource.data.projectId != null && isProjectMember(resource.data.projectId);
 
-      // Create: Allowed only if user is authorized for target project and createdByUid matches
-      allow create: if isAllowedUser() && (
-        request.resource.data.projectId != null &&
-        canAccessParentProject(request.resource.data.projectId) &&
-        request.resource.data.createdByUid == currentUserUid()
-      );
-
-      // Update: Authorized members only, enforce immutability on approved entries
-      allow update: if isAllowedUser() && (
-        resource.data.projectId != null &&
-        canAccessParentProject(resource.data.projectId) &&
-        request.resource.data.projectId == resource.data.projectId &&
-        // If already approved, protect financial fields from direct overwriting unless through an amendment
+      // Create: Allowed only if user is a member of the target project and createdByUid matches
+      allow create: if request.resource.data.projectId != null &&
+        isProjectMember(request.resource.data.projectId) &&
         (
+          request.resource.data.createdByUid == null ||
+          request.resource.data.createdByUid == currentUserUid()
+        );
+
+      // Update: Authorized project members only, enforce immutability on approved entries
+      allow update: if resource.data.projectId != null &&
+        isProjectMember(resource.data.projectId) &&
+        request.resource.data.projectId == resource.data.projectId &&
+        (
+          // If already approved, protect financial fields from direct overwriting unless through an amendment
           resource.data.status != 'approved' ||
           (
             request.resource.data.amendments != null &&
             request.resource.data.amendments.size() > resource.data.amendments.size()
           ) ||
-          // Comments or attachment metadata additions allowed
+          // Comments or attachment additions allowed
           (
             request.resource.data.amount == resource.data.amount &&
             request.resource.data.type == resource.data.type &&
@@ -205,37 +205,62 @@ service cloud.firestore {
             request.resource.data.payerPartnerId == resource.data.payerPartnerId &&
             request.resource.data.recipientPartnerId == resource.data.recipientPartnerId
           )
-        )
-      );
+        );
 
       // Delete: Only unapproved drafts or pending records can be deleted by creator or owner
-      allow delete: if isAllowedUser() && (
+      allow delete: if resource.data.projectId != null &&
+        isProjectMember(resource.data.projectId) &&
         resource.data.status != 'approved' &&
-        resource.data.projectId != null &&
         (
           resource.data.createdByUid == currentUserUid() ||
-          isParentProjectOwner(resource.data.projectId)
-        )
+          isProjectOwner(resource.data.projectId)
+        );
+    }
+
+    // -------------------------------------------------------------
+    // Audit Logs Collection (Top-Level, Project-Scoped Isolation)
+    // -------------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow read: if resource.data.projectId != null && isProjectMember(resource.data.projectId);
+
+      // Create: Actor must be the authenticated member of the project
+      allow create: if request.resource.data.projectId != null &&
+        isProjectMember(request.resource.data.projectId) &&
+        (
+          request.resource.data.actorUid == null ||
+          request.resource.data.actorUid == currentUserUid()
+        );
+
+      // Strictly append-only
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Notifications Collection (User- or Project-Scoped)
+    // -------------------------------------------------------------
+    match /notifications/{notificationId} {
+      allow read, delete: if isAllowedUser() && (
+        (resource.data.recipientUid != null && resource.data.recipientUid == currentUserUid()) ||
+        (currentUserEmail() != '' && resource.data.recipientEmail != null && resource.data.recipientEmail == currentUserEmail()) ||
+        (resource.data.projectId != null && isProjectMember(resource.data.projectId))
+      );
+
+      allow create: if isAllowedUser() && (
+        request.resource.data.projectId == null ||
+        isProjectMember(request.resource.data.projectId)
+      );
+
+      allow update: if isAllowedUser() && (
+        resource.data.recipientUid == currentUserUid() ||
+        (currentUserEmail() != '' && resource.data.recipientEmail == currentUserEmail())
       );
     }
 
     // -------------------------------------------------------------
-    // Audit Logs Collection (Append-Only, Project Scoped)
+    // Deny-by-default for any unmapped collections
     // -------------------------------------------------------------
-    match /auditLogs/{logId} {
-      allow read: if isAllowedUser() && (
-        resource.data.projectId != null && canAccessParentProject(resource.data.projectId)
-      );
-
-      // Create: Actor must be the authenticated user
-      allow create: if isAllowedUser() && (
-        request.resource.data.projectId != null &&
-        canAccessParentProject(request.resource.data.projectId) &&
-        request.resource.data.actorUid == currentUserUid()
-      );
-
-      // Strictly append-only: no edits or deletions permitted
-      allow update, delete: if false;
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
