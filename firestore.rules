@@ -13,11 +13,20 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
-    // Always returns lowercased email string, or '' if not authenticated / missing
+    // Helper to safely get the current authenticated user email in lowercase
     function currentUserEmail() {
-      return (request.auth != null && 'email' in request.auth.token && request.auth.token.email != null)
+      return (isAuthenticated() && request.auth.token.email != null)
         ? request.auth.token.email.lower()
         : '';
+    }
+
+    // Bootstrap administrator (Directly matches owner account regardless of token casing)
+    function isBootstrapAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'mayank.abhishekgupta@gmail.com' ||
+        request.auth.token.email == 'Mayank.abhishekgupta@gmail.com' ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'mayank.abhishekgupta@gmail.com')
+      );
     }
 
     // Safe document existence checker without methods inside path interpolation
@@ -30,11 +39,6 @@ service cloud.firestore {
       return emailStr != '' &&
         exists(/databases/$(database)/documents/allowed_users/$(emailStr)) &&
         get(/databases/$(database)/documents/allowed_users/$(emailStr)).data.get('role', '') == 'admin';
-    }
-
-    // Bootstrap administrator (User email from runtime metadata)
-    function isBootstrapAdmin() {
-      return isAuthenticated() && currentUserEmail() == 'mayank.abhishekgupta@gmail.com';
     }
 
     // Check if the current user is approved in the invite-only allowlist or is the bootstrap admin
@@ -101,21 +105,25 @@ service cloud.firestore {
     match /allowed_users/{userEmail} {
       // Individual user can verify their own allowlist entry during login check, or admin can read
       allow get: if isAuthenticated() && (
-        isAdmin() ||
-        currentUserEmail() == userEmail.lower()
+        isBootstrapAdmin() ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == userEmail ||
+          request.auth.token.email.lower() == userEmail.lower()
+        )) ||
+        isAdmin()
       );
 
-      // List query: Only admin can view the entire allowlist
-      allow list: if isAdmin();
+      // List query: Bootstrap admin or any admin can view the entire allowlist
+      allow list: if isBootstrapAdmin() || isAdmin();
 
-      // Admin can add or edit approved users
-      allow create, update: if isAdmin() &&
+      // Bootstrap admin or any admin can add or edit approved users
+      allow create, update: if (isBootstrapAdmin() || isAdmin()) &&
         request.resource.data.email is string &&
         request.resource.data.email.size() >= 3 &&
         request.resource.data.email.size() <= 150;
 
-      // Admin can remove approved users
-      allow delete: if isAdmin();
+      // Bootstrap admin or any admin can remove approved users
+      allow delete: if isBootstrapAdmin() || isAdmin();
     }
 
     // -------------------------------------------------------------
