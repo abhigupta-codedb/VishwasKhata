@@ -166,11 +166,19 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/60 backdrop-blur-xs p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg max-h-[92vh] sm:max-h-[88vh] rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200">
+    <div 
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150"
+    >
+      <div className="bg-white w-full sm:max-w-lg max-h-[92dvh] sm:max-h-[88vh] rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-200">
         
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-stone-50">
+          <div className="w-10 h-1 bg-stone-300 rounded-full" />
+        </div>
+
         {/* Header */}
-        <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between bg-stone-50">
+        <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between bg-stone-50 flex-shrink-0">
           <div>
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm font-bold text-stone-900">Record Partner Contribution</h3>
@@ -183,14 +191,15 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
           <button
             id="close-add-modal-btn"
             onClick={onClose}
-            className="p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors"
+            className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+        <form onSubmit={handleFormSubmit} className="flex-1 flex flex-col overflow-hidden text-xs">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4">
           
           {/* Amount Introduced Field */}
           {isFinancial && (
@@ -454,13 +463,15 @@ export const AddEntryModal: React.FC<AddEntryModalProps> = ({
             )}
           </div>
 
-          {/* Submit Action */}
-          <div className="pt-2">
+          </div>
+
+          {/* Sticky Submit Action Footer */}
+          <div className="p-3.5 bg-stone-50/95 backdrop-blur-xs border-t border-stone-200 pb-safe sm:pb-3.5 flex-shrink-0">
             <button
               id="submit-entry-btn"
               type="submit"
               disabled={isUploading}
-              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 active:scale-[0.99] text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
               <span>Record in Investment Ledger</span>

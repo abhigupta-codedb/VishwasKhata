@@ -20,6 +20,10 @@ import {
   Scale, 
   FileText,
   Paperclip,
+  SlidersHorizontal,
+  X,
+  RotateCcw,
+  Check,
   ChevronRight,
   Sparkles,
   ShieldCheck,
@@ -53,6 +57,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   const [filterCategory, setFilterCategory] = useState<FilterCategory>('all');
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+
+  const activeFilterCount = (filterCategory !== 'all' ? 1 : 0) + (selectedPartnerId !== 'all' ? 1 : 0);
 
   const partnerMap = useMemo(() => new Map(project.partners.map(p => [p.id, p])), [project.partners]);
   const financials = useMemo(() => calculateProjectFinancials(project, entries), [project, entries]);
@@ -189,16 +196,37 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
       {/* Search & Partner Filters */}
       <div className="space-y-2">
-        <div className="relative">
-          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
-          <input
-            id="timeline-search-input"
-            type="text"
-            placeholder="Search contributions, purpose, reference..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white text-xs text-stone-800 placeholder-stone-400 border border-stone-200 rounded-xl shadow-2xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
+            <input
+              id="timeline-search-input"
+              type="text"
+              placeholder="Search contributions, purpose, reference..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white text-xs text-stone-800 placeholder-stone-400 border border-stone-200 rounded-xl shadow-2xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <button
+            id="open-filters-sheet-btn"
+            onClick={() => setShowFilterSheet(true)}
+            className={`px-3 py-2 border rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs flex-shrink-0 ${
+              activeFilterCount > 0
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+            }`}
+            title="Filter Ledger Contributions"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Filter by Contribution Type */}
@@ -448,6 +476,143 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           })
         )}
       </div>
+
+      {/* Filters Bottom Sheet */}
+      {showFilterSheet && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowFilterSheet(false);
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-white w-full sm:max-w-md max-h-[85dvh] rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-200">
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-stone-50">
+              <div className="w-10 h-1 bg-stone-300 rounded-full" />
+            </div>
+
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between bg-stone-50 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
+                <h3 className="text-sm font-bold text-stone-900">Filter Ledger Entries</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setFilterCategory('all');
+                      setSelectedPartnerId('all');
+                    }}
+                    className="text-[11px] font-semibold text-stone-500 hover:text-stone-800 transition-colors flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowFilterSheet(false)}
+                  className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Content */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 text-xs">
+              {/* Filter By Category */}
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-2">
+                  Contribution Category
+                </label>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {[
+                    { id: 'all', label: 'All Contributions', desc: 'Every recorded entry in setup phase' },
+                    { id: 'capital', label: 'Core Equity Capital', desc: 'Permanent investment for partner stake' },
+                    { id: 'advance', label: 'Setup Advances', desc: 'Temporary funds advanced by founders' },
+                    { id: 'direct', label: 'Direct Payments', desc: 'Paid vendors directly from personal account' },
+                    { id: 'pending', label: 'Pending Sign-Off', desc: 'Entries awaiting mutual partner approval' },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setFilterCategory(cat.id as FilterCategory)}
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                        filterCategory === cat.id
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950 font-semibold shadow-2xs'
+                          : 'bg-white border-stone-200/90 text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-semibold">{cat.label}</div>
+                        <div className="text-[10px] text-stone-500 mt-0.5">{cat.desc}</div>
+                      </div>
+                      {filterCategory === cat.id && (
+                        <Check className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filter By Partner */}
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-2">
+                  Contributing Partner
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => setSelectedPartnerId('all')}
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                      selectedPartnerId === 'all'
+                        ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950 font-semibold'
+                        : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold">All Partners</span>
+                    {selectedPartnerId === 'all' && (
+                      <Check className="w-3.5 h-3.5 text-emerald-700" />
+                    )}
+                  </button>
+
+                  {project.partners.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPartnerId(p.id)}
+                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
+                        selectedPartnerId === p.id
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950 font-semibold'
+                          : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: p.avatarColor }}
+                        />
+                        <span className="text-xs truncate font-medium">{p.name}</span>
+                      </div>
+                      {selectedPartnerId === p.id && (
+                        <Check className="w-3.5 h-3.5 text-emerald-700 flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Pinned Sticky Footer */}
+            <div className="p-3.5 bg-stone-50 border-t border-stone-200 pb-safe sm:pb-3.5 flex-shrink-0">
+              <button
+                onClick={() => setShowFilterSheet(false)}
+                className="w-full py-2.5 bg-stone-900 hover:bg-black active:scale-[0.99] text-white rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-2"
+              >
+                <span>Apply & View {filteredEntries.length} Contributions</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

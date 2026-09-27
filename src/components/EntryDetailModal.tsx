@@ -170,12 +170,20 @@ export const EntryDetailModal: React.FC<EntryDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-200">
+    <div 
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-200"
+    >
       <div 
-        className="bg-white w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200"
+        className="bg-white w-full sm:max-w-lg max-h-[92dvh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-200"
       >
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-slate-50/80 flex-shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
+
         {/* Modal Header */}
-        <div className="px-4 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${typeMeta.badgeBg}`}>
               {typeMeta.label}
@@ -871,7 +879,7 @@ export const EntryDetailModal: React.FC<EntryDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs">
+        <div className="p-3 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs pb-safe sm:pb-3 flex-shrink-0">
           <div className="text-slate-500 text-[11px] truncate">
             ID: <span className="font-mono">{entry.id}</span>
           </div>

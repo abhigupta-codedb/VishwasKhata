@@ -234,56 +234,23 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({
                 {/* 1-Tap Approve / Reject Actions */}
                 {canVote && (
                   <div className="pt-1">
-                    {rejectingEntryId === entry.id ? (
-                      <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl space-y-2 text-xs">
-                        <div className="font-semibold text-rose-900 flex items-center gap-1 text-[11px]">
-                          <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                          <span>Reason for rejection:</span>
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="e.g. Please provide GST tax bill..."
-                          value={rejectionReason}
-                          onChange={(e) => setRejectionReason(e.target.value)}
-                          className="w-full text-xs px-2.5 py-1.5 bg-white border border-rose-300 rounded-lg focus:outline-none"
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setRejectingEntryId(null);
-                              setRejectionReason('');
-                            }}
-                            className="px-2.5 py-1 text-stone-600 hover:bg-white rounded"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleConfirmReject(entry.id)}
-                            className="px-3 py-1 bg-rose-700 text-white font-semibold rounded-lg hover:bg-rose-800"
-                          >
-                            Confirm Reject
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          id={`quick-approve-btn-${entry.id}`}
-                          onClick={() => onQuickVote(entry.id, 'approved')}
-                          className="flex-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-all"
-                        >
-                          <Check className="w-4 h-4 stroke-[2.5]" />
-                          <span>Sign Off & Verify (सहमति दें)</span>
-                        </button>
-                        <button
-                          id={`quick-reject-btn-${entry.id}`}
-                          onClick={() => setRejectingEntryId(entry.id)}
-                          className="py-2 px-3 bg-stone-100 hover:bg-rose-50 hover:text-rose-700 text-stone-700 border border-stone-200 rounded-xl text-xs font-medium transition-colors"
-                        >
-                          Question
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        id={`quick-approve-btn-${entry.id}`}
+                        onClick={() => onQuickVote(entry.id, 'approved')}
+                        className="flex-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-all"
+                      >
+                        <Check className="w-4 h-4 stroke-[2.5]" />
+                        <span>Sign Off & Verify (सहमति दें)</span>
+                      </button>
+                      <button
+                        id={`quick-reject-btn-${entry.id}`}
+                        onClick={() => setRejectingEntryId(entry.id)}
+                        className="py-2 px-3 bg-stone-100 hover:bg-rose-50 hover:text-rose-700 text-stone-700 border border-stone-200 rounded-xl text-xs font-medium transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -306,6 +273,83 @@ export const ApprovalsView: React.FC<ApprovalsViewProps> = ({
           })
         )}
       </div>
+
+      {/* Decline / Rejection Bottom Sheet */}
+      {rejectingEntryId && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setRejectingEntryId(null);
+              setRejectionReason('');
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-white w-full sm:max-w-md max-h-[85dvh] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 text-xs">
+            {/* Mobile Drag Handle */}
+            <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-stone-50 flex-shrink-0">
+              <div className="w-10 h-1 bg-stone-300 rounded-full" />
+            </div>
+
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between bg-stone-50 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+                <h3 className="text-sm font-bold text-stone-900">Decline Partner Sign-Off</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setRejectingEntryId(null);
+                  setRejectionReason('');
+                }}
+                className="p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+              <p className="text-xs text-stone-600 leading-relaxed">
+                Provide a short reason for declining this setup entry so your partner can revise details, fix amounts, or attach missing receipts.
+              </p>
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1">
+                  Reason for Declining *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="e.g. Please provide GST tax invoice or split vendor payment..."
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  className="w-full p-3 bg-stone-50 border border-stone-300 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 focus:bg-white resize-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Pinned Safe Footer */}
+            <div className="p-3.5 bg-stone-50 border-t border-stone-200 pb-safe sm:pb-3.5 flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => {
+                  setRejectingEntryId(null);
+                  setRejectionReason('');
+                }}
+                className="flex-1 py-2.5 text-stone-600 hover:bg-stone-200/80 rounded-xl font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleConfirmReject(rejectingEntryId)}
+                className="flex-1 py-2.5 bg-rose-700 hover:bg-rose-800 active:scale-[0.99] text-white rounded-xl font-bold transition-all shadow-xs"
+              >
+                Confirm Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
