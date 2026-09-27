@@ -319,7 +319,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
       </div>
 
       {/* Transparency Guarantee Note */}
-      <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-xl p-3 text-xs text-emerald-900 space-y-1">
+      {/* <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-xl p-3 text-xs text-emerald-900 space-y-1">
         <div className="flex items-center gap-1.5 font-bold text-emerald-950">
           <ShieldCheck className="w-4 h-4 text-emerald-700 flex-shrink-0" />
           <span>One Mutually Approved Source of Truth</span>
@@ -328,7 +328,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
           Every contribution introduced into this setup ledger is verified by co-partners. 
           This guarantees a transparent, dispute-free record of who invested what to establish the venture.
         </p>
-      </div>
+      </div> */}
 
     </div>
   );

@@ -298,7 +298,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
           }`}
         >
           <Lock className="w-3 h-3 text-emerald-600" />
-          <span>Invite Table</span>
+          <span>Invite</span>
         </button>
         <button
           onClick={() => setActiveSection('audit')}
@@ -331,7 +331,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
         <div className="space-y-4 animate-in fade-in duration-150">
           
           {/* Header Card */}
-          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
+          {/* <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-stone-900 font-bold text-xs">
                 <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
@@ -346,7 +346,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
             <p className="text-[11px] text-stone-500 leading-relaxed">
               This app is strictly invite-only. Only email addresses present in the Firestore <code className="bg-stone-200 px-1 py-0.5 rounded text-stone-800">allowed_users</code> collection can sign up and log in. Unlisted emails are automatically blocked.
             </p>
-          </div>
+          </div> */}
 
           {/* Feedback Message */}
           {allowedMsg && (
@@ -532,14 +532,14 @@ export const MoreView: React.FC<MoreViewProps> = ({
           </div>
 
           {/* Direct Firestore Management Tip */}
-          <div className="p-3 bg-stone-100 border border-stone-200 rounded-xl text-[11px] text-stone-600 space-y-1">
+          {/* <div className="p-3 bg-stone-100 border border-stone-200 rounded-xl text-[11px] text-stone-600 space-y-1">
             <span className="font-semibold text-stone-800 block">Firebase Console Direct Access:</span>
             <p className="leading-normal">
               You can also add or delete emails directly in the Firestore database under collection:
               <br />
               <code className="font-mono text-emerald-900 font-semibold">allowed_users/{`{email_lowercase}`}</code>
             </p>
-          </div>
+          </div> */}
 
         </div>
       )}
@@ -749,13 +749,13 @@ export const MoreView: React.FC<MoreViewProps> = ({
               </button>
             </div>
 
-            <button
+            {/* <button
               onClick={handleExportJSON}
               className="w-full flex items-center justify-center gap-1.5 py-2 bg-stone-50 border border-stone-200 hover:bg-stone-100 rounded-xl text-xs font-semibold text-stone-700 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export Project JSON</span>
-            </button>
+            </button> */}
 
             {isDemoMode ? (
               <button
@@ -770,11 +770,14 @@ export const MoreView: React.FC<MoreViewProps> = ({
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset Demo Sandbox Records</span>
               </button>
-            ) : (
-              <div className="text-[11px] text-stone-400 text-center py-1">
-                Production multi-tenant records are permanently protected by Firestore security rules.
-              </div>
-            )}
+            ) : 
+            // (
+            //   <div className="text-[11px] text-stone-400 text-center py-1">
+            //     Production multi-tenant records are permanently protected by Firestore security rules.
+            //   </div>
+            // )
+            <></>
+            }
           </div>
         </div>
       )}
