@@ -1,0 +1,154 @@
+Act as an expert bank exam coach specializing in Union Bank SO, IBPS SO IT Officer, SBI Specialist Officer, and other PSU Bank technology recruitment exams.
+
+I am preparing for the Union Bank of India Specialist Officer exam for the post of MERN Stack Developer III. The exam consists of 50 MCQ-based Professional Knowledge questions to be completed in 60 minutes.
+
+My profile:
+- 8 years of experience as a MERN Stack Developer
+- Strong in React, Node.js, Express.js, MongoDB
+- Familiar with REST APIs, JWT Authentication, Cloud Services, Git, CI/CD, and System Design
+
+Your task is to act as the exam setter and prepare me for the exam.
+
+Analyze previous IT Officer, Software Developer, Application Developer, and Specialist Officer exams conducted by PSU banks such as:
+- Union Bank of India
+- IBPS SO IT Officer
+- SBI Specialist Cadre Officer
+- Bank of Baroda IT Officer
+- Punjab National Bank IT Officer
+- Canara Bank IT Specialist Officer
+
+Based on common patterns, generate:
+
+1. The top 100 high-probability MCQs.
+2. Questions categorized by topic.
+3. Difficulty levels: Easy, Medium, Hard.
+4. Detailed explanations for every answer.
+5. Frequently repeated concepts from previous bank exams.
+6. Trick questions commonly asked in MCQ exams.
+7. Rapid revision notes.
+8. Expected weightage by topic.
+9. Last-minute revision sheet.
+10. Mock test papers with 50 questions each and answer keys.
+
+Focus heavily on the following topics:
+
+### MERN Stack
+- React lifecycle
+- Hooks
+- Context API
+- Redux
+- Virtual DOM
+- SSR vs CSR
+- React Performance Optimization
+
+### JavaScript
+- Closures
+- Hoisting
+- Event Loop
+- Promises
+- Async/Await
+- Prototype Chain
+- Memory Management
+
+### Node.js
+- Streams
+- Clustering
+- Worker Threads
+- Event Loop
+- Middleware
+- Authentication
+- Error Handling
+
+### Express.js
+- Routing
+- Middleware
+- Security
+- Session Management
+- API Versioning
+
+### MongoDB
+- Indexing
+- Aggregation Pipeline
+- Replication
+- Sharding
+- Transactions
+- Query Optimization
+- CAP Theorem
+
+### Databases
+- ACID
+- Normalization
+- Joins
+- SQL vs NoSQL
+- Isolation Levels
+- Transactions
+
+### REST & APIs
+- HTTP Methods
+- Status Codes
+- Authentication
+- OAuth
+- JWT
+- Rate Limiting
+- CORS
+- API Security
+
+### System Design
+- Load Balancing
+- Caching
+- CDN
+- Message Queues
+- Scalability
+- Microservices
+- API Gateway
+
+### Security
+- OWASP Top 10
+- SQL Injection
+- XSS
+- CSRF
+- Authentication
+- Encryption
+- HTTPS
+- SSL/TLS
+
+### Networking
+- TCP/IP
+- DNS
+- HTTP/HTTPS
+- WebSockets
+- Load Balancers
+- Reverse Proxies
+
+### Operating Systems
+- Processes
+- Threads
+- Deadlocks
+- Scheduling
+- Memory Management
+
+### Data Structures & Algorithms
+- Time Complexity
+- Hash Tables
+- Trees
+- Graphs
+- Stacks
+- Queues
+
+### Cloud & DevOps
+- AWS Basics
+- Docker
+- Kubernetes
+- CI/CD
+- Git
+- Monitoring
+
+### Banking Application Development
+- Secure Coding
+- Audit Logs
+- Compliance
+- High Availability
+- Disaster Recovery
+- Transaction Processing
+
+Generate the content in a format suitable for daily revision and exam practice.
